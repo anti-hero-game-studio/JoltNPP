@@ -1,0 +1,351 @@
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Subsystems/WorldSubsystem.h"
+#include "Core/Libraries/JoltBridgeLibrary.h"
+#include "JoltBridgeMain.h"
+#include <functional>
+
+#include "Core/CollisionFilters/JoltFilters.h"
+#include "Core/DataTypes/JoltBridgeTypes.h"
+#include "GameFramework/Actor.h"
+#include "Subsystems/SubsystemCollection.h"
+#include "Templates/Function.h"
+#include "JoltPhysicsWorldSubsystem.generated.h"
+
+
+class FJoltDebugRenderer;
+class FRaycastCollector_AllHits;
+class FSweepCastCollector_AllHits;
+class FClosestShapeCastHitCollector;
+class FirstRayCastHitCollector;
+class UJoltSettings;
+struct FJoltWorkerOptions;
+class FJoltWorker;
+class FJoltCallBackContactListener;
+class UShapeComponent;
+class FUnrealCollisionDispatcher;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPhysicsStep, const float&, DeltaTime);
+DECLARE_MULTICAST_DELEGATE(FOnModifyContacts);
+
+/**
+ * 
+ */
+UCLASS()
+class JOLTBRIDGE_API UJoltPhysicsWorldSubsystem : public UWorldSubsystem
+{
+	GENERATED_BODY()
+	
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	void InitPhysicsSystem( int cMaxBodies, int cNumBodyMutexes, int cMaxBodyPairs, int cMaxContactConstraints);
+	
+	virtual void OnWorldEndPlay(UWorld& InWorld) override;
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+	
+	
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "JoltBridge Physics|Objects")
+	bool DebugEnabled=true;
+
+	// TODO:@GreggoryAddison::CodeLinking | Replace this with the gravity you would set in the simulation comp
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "JoltBridge Physics|Objects")
+	FVector Gravity=FVector(0, 0, -9.8);
+
+	// Input the fixed frame rate to calculate physics
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "JoltBridge Physics|Objects")
+	float PhysicsRefreshRate =60.0f;
+
+	// This is independent of the frame rate in UE
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "JoltBridge Physics|Objects")
+	float PhysicsDeltaTime;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "JoltBridge Physics|Objects")
+	int SubSteps=1;
+	
+	
+#pragma region DELEGATES
+	UPROPERTY(BlueprintAssignable, Category="JoltBridge Physics|Delegates")
+	FOnPhysicsStep OnPrePhysicsStep;
+	
+	UPROPERTY(BlueprintAssignable, Category="JoltBridge Physics|Delegates")
+	FOnPhysicsStep OnPostPhysicsStep;
+#pragma endregion
+	
+public:
+	/**
+	 * Creates a joltBridge physics compatible rigid body shape. Actors tagged "dynamic" will automatically register themselves. Set "bSimulatePhysics" to true if you want the body to start in an active state.
+	 * @param Target	The actor with primitive components that will be converted to rigid shapes. ACTOR SCALE MUST BE {1,1,1}
+	 * @return	Returns the id to use in collision lookups
+	 */
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Register Dynamic Rigid Body", meta=(AutoCreateRefTerm = "Options"))
+	void RegisterJoltRigidBody(AActor* Target);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects", DisplayName="Set Physics State")
+	void K2_SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void GetPhysicsState(int ID, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void GetMotionState(int Id, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void StepPhysics(float FixedTimeStep = 0.016666667f);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void AddImpulse(AActor* Target, const FVector Impulse);
+
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void AddForce(AActor* Target, const FVector Force);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void SetAngularVelocity(AActor* Target, const FVector AngularVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void UpdateActorVelocity(AActor* Target, const FVector LinearVelocity, const FVector AngularVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void ZeroActorVelocity(AActor* Target);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Get All Overlapping Actors", meta=(DevelopementOnly))
+	TArray<AActor*> GetOverlappingActors(AActor* Target) const;
+	
+	UFUNCTION(BlueprintPure, Category = "JoltBridge Physics|Objects")
+	float GetGravity(const UPrimitiveComponent* Target) const;
+	
+
+	
+
+	
+#pragma region SCENE QUERY
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	FHitResult LineTraceSingleByChannel(const FVector Start, const FVector End, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, int32& HitBodyId);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	UPARAM(DisplayName=Hits) TArray<FHitResult> LineTraceMultiByChannel(const FVector Start, const FVector End, const TEnumAsByte<ECollisionChannel> Channel, 
+		const TArray<AActor*>& ActorsToIgnore, TArray<int32>& HitBodyIds);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	FHitResult SweepSphereSingleByChannel(const float Radius, const FVector Start, const FVector End, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, int32& HitBodyId);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	UPARAM(DisplayName=Hits) TArray<FHitResult> SweepSphereMultiByChannel(const float Radius, const FVector Start, const FVector End, 
+		const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, TArray<int32>& HitBodyIds);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	FHitResult SweepCapsuleSingleByChannel(const float Radius, const float HalfHeight, const FVector Start, const FVector End, const FRotator Rotation, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, int32& HitBodyId);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	UPARAM(DisplayName=Hits) TArray<FHitResult> SweepCapsuleMultiByChannel(const float Radius, const float HalfHeight, const FVector Start, const FVector End, 
+		const FRotator Rotation, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, TArray<int32>& HitBodyIds);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	FHitResult SweepBoxSingleByChannel(const FVector BoxExtents, const FVector Start, const FVector End, const FRotator Rotation, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, int32& HitBodyId);
+	
+	UFUNCTION(BlueprintCallable, Category="JoltBridge Physics|Scene Queries", meta=( AutoCreateRefTerm = "ActorsToIgnore"))
+	UPARAM(DisplayName=Hits) TArray<FHitResult> SweepBoxMultiByChannel(const FVector BoxExtents, const FVector Start, const FVector End, 
+		const FRotator Rotation, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, TArray<int32>& HitBodyIds);
+	
+	int32 LineTraceSingle(const FVector& Start, const FVector& End, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, FHitResult& OutHit);
+	TArray<int32> LineTraceMulti(const FVector& Start, const FVector& End, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
+	
+	int32 SweepTraceSingle(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, FHitResult& OutHit);
+	TArray<int32> SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
+	
+
+private:
+	
+	
+	void ConstructHitResult(const FirstRayCastHitCollector& Result, FHitResult& OutHit) const;
+	void ConstructHitResult(const FClosestShapeCastHitCollector& Result, FHitResult& OutHit) const;
+	
+	void ConstructHitResult(const FSweepCastCollector_AllHits& Result, TArray<FHitResult>& OutHits) const;
+	void ConstructHitResult(const FRaycastCollector_AllHits& Result, TArray<FHitResult>& OutHits) const;
+
+	
+	
+#pragma endregion 
+
+	UPROPERTY()
+	const UJoltSettings* JoltSettings = nullptr;
+
+	FJoltWorkerOptions* WorkerOptions = nullptr;
+
+	FJoltWorker* JoltWorker = nullptr;
+
+	FJoltCallBackContactListener* ContactListener = nullptr;
+
+	JPH::PhysicsSystem* MainPhysicsSystem = nullptr;
+
+	JPH::BodyInterface* BodyInterface = nullptr;
+
+	uint32 StaticBodyIDX;
+
+	uint32 DynamicBodyIDX;
+
+	FBroadPhaseLayerInterfaceImpl* BroadPhaseLayerInterface = nullptr;
+
+	// Create class that filters object vs broadphase layers
+	// Note: As this is an interface, PhysicsSystem will take a reference to this so this instance needs to stay alive!
+	ObjectVsBroadPhaseLayerFilterImpl* ObjectVsBroadphaseLayerFilter = nullptr;
+
+	// Create class that filters object vs object layers
+	// Note: As this is an interface, PhysicsSystem will take a reference to this so this instance needs to stay alive!
+	ObjectLayerPairFilterImpl* ObjectVsObjectLayerFilter = nullptr;
+
+	TArray<const JPH::BoxShape*> BoxShapes;
+
+	TArray<const JPH::SphereShape*> SphereShapes;
+
+	TArray<const JPH::CapsuleShape*> CapsuleShapes;
+
+	TArray<const JPH::HeightFieldShapeSettings*> HeightFieldShapes;
+
+	TArray<JPH::Body*> SavedBodies;
+
+	TMap<uint32, JPH::Body*> BodyIDBodyMap;
+
+	// JPH::Array<const JPH::Body*> HeightMapArray;
+
+	// JPH::Array<const JPH::Body*> LandscapeSplines;
+
+	TMap<EPhysicalSurface, const JoltPhysicsMaterial*> SurfaceJoltMaterialMap;
+
+	TMap<EPhysicalSurface, TWeakObjectPtr<const UPhysicalMaterial>> SurfaceUEMaterialMap;
+
+	TMap<const JPH::BodyID*, TWeakObjectPtr<AActor>> DynamicBodyIDActorMap;
+
+	TMap<const JPH::BodyID*, FTransform> SkeletalMeshBodyIDLocalTransformMap;
+
+	struct ConvexHullShapeHolder
+	{
+		const UBodySetup*			BodySetup;
+		int							HullIndex;
+		FVector						Scale;
+		const JPH::ConvexHullShape* Shape;
+	};
+
+	TArray<ConvexHullShapeHolder> ConvexShapes;
+
+#ifdef JPH_DEBUG_RENDERER
+	FJoltDebugRenderer* JoltDebugRendererImpl = nullptr;
+
+	JPH::BodyManager::DrawSettings* DrawSettings = nullptr;
+
+	void DrawDebugLines() const;
+#endif
+
+	typedef const std::function<void(const JPH::Shape*, const FTransform&, const FJoltBodyOptions& /*ShapeOptions*/)>& PhysicsGeometryCallback;
+	
+		
+#pragma region JOLTBRIDGE SHAPE CREATION
+public:
+	
+	const JPH::BoxShape* GetBoxCollisionShape(const FVector& Dimensions, const JoltPhysicsMaterial* material = nullptr);
+
+	const JPH::SphereShape* GetSphereCollisionShape(float Radius, const JoltPhysicsMaterial* material = nullptr);
+
+	const JPH::CapsuleShape* GetCapsuleCollisionShape(float Radius, float Height, const JoltPhysicsMaterial* material = nullptr);
+
+	const JPH::ConvexHullShape* GetConvexHullCollisionShape(UBodySetup* BodySetup, int ConvexIndex, const FVector& Scale, const JoltPhysicsMaterial* material = nullptr);
+
+	JPH::Body* AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+
+	JPH::Body* AddRigidBodyCollider(USkeletalMeshComponent* Skel, const FTransform& localTransform, const JPH::Shape* CollisionShape, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	
+	JPH::Body* AddStaticCollider(const JPH::Shape* Shape, const FTransform& Transform, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	
+	JPH::Body* AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+
+	static JPH::BodyCreationSettings MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	
+private:
+	
+	/*
+	 * Fetch all the actors in UE world and add them to jolt simulation
+	 * "jolt-static" tag should be added for static objects (from UE editor)
+	 * "jolt-dynamic" tag should be added for dynamic objects (from UE editor)
+	 */
+	void AddAllJoltActors(const UWorld* World);
+
+	void ExtractPhysicsGeometry(const AActor* Actor, PhysicsGeometryCallback CB, FUnrealShapeDescriptor& ShapeDescriptor);
+	
+	void ExtractComplexPhysicsGeometry(const FTransform& XformSoFar, UStaticMeshComponent* Mesh, PhysicsGeometryCallback Callback, FUnrealShapeDescriptor& ShapeDescriptor);
+
+	void ExtractPhysicsGeometry(UStaticMeshComponent* SMC, const FTransform& InvActorXform, PhysicsGeometryCallback CB, FUnrealShapeDescriptor& ShapeDescriptor);
+
+	void ExtractPhysicsGeometry(UShapeComponent* Sc, const FTransform& InvActorXform, PhysicsGeometryCallback CB, FUnrealShapeDescriptor& ShapeDescriptor);
+
+	void ExtractPhysicsGeometry(UPrimitiveComponent* PrimitiveComponent, const FTransform& XformSoFar, UBodySetup* BodySetup, PhysicsGeometryCallback CB, FUnrealShapeDescriptor& ShapeDescriptor);
+	
+	const JPH::Shape* ProcessShapeElement(const UShapeComponent* ShapeComponent);
+	const JPH::Shape* ProcessShapeElement(const FCollisionShape& ShapeComponent);
+	
+	const JoltPhysicsMaterial* GetJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat);
+
+	const UPhysicalMaterial* GetUEPhysicsMaterial(const JoltPhysicsMaterial* JoltPhysicsMat) const;
+	
+	void CleanUpJoltBridgeWorld();
+
+	
+#pragma endregion
+	
+
+#pragma region DATA CACHE
+	
+protected:
+	// Holds an array of collision object id's for a specific actor.
+	TMap<TWeakObjectPtr<AActor>, FUnrealShapeDescriptor> GlobalShapeDescriptorDataCache; 
+	
+	FUnrealShapeDescriptor GetShapeDescriptorData(const AActor* Actor) const;
+	
+	
+public:
+	
+	
+#pragma endregion
+	
+#pragma region HELPERS
+	
+	int32 GetActorRootShapeId(const AActor* Actor) const;
+	int32 FindShapeId(const UPrimitiveComponent* Target) const;
+	bool IsBodyValid(const UPrimitiveComponent* Target) const;
+	bool HasRigidBodyBeenCreated(const UPrimitiveComponent* Target) const;
+	bool HasSensorBodyBeenCreated(const UPrimitiveComponent* Target) const;
+	bool IsCollisionBodyActive(const UPrimitiveComponent* Target) const;
+	void SetRigidBodyActiveState(const UPrimitiveComponent* Target, bool Active) const;
+	void SetPhysicsState(int ID, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const;
+	
+	const FCollisionResponseContainer& GetCollisionResponseContainer(const UPrimitiveComponent* Target) const;
+	
+	JPH::BodyInterface* GetBodyInterface() const { return BodyInterface; };
+	JPH::Body* GetBody(const uint32& BodyID) const { return BodyIDBodyMap[BodyID];}
+	JPH::Body* GetRigidBody(const FHitResult& Hit) const;
+	const FJoltUserData* GetUserData(const UPrimitiveComponent* Target) const;
+	
+	
+	
+	
+	FOnModifyContacts OnModifyContacts;
+	
+
+private:
+	
+	TArray<TUniquePtr<FJoltUserData>> UserDataStore;
+	
+	FCollisionResponseContainer DefaultCollisionResponseContainer;
+	
+	FJoltUserData* AllocUserData()
+	{
+		TUniquePtr<FJoltUserData> Ptr = MakeUnique<FJoltUserData>();
+		FJoltUserData* Raw = Ptr.Get();
+		UserDataStore.Add(MoveTemp(Ptr));
+		return Raw;
+	}
+	
+	
+#pragma endregion 
+};
