@@ -1,0 +1,3 @@
+[submodule "Source/ThirdParty/UnrealJoltLibrary/JoltPhysics"]
+	path = Source/ThirdParty/UnrealJoltLibrary/JoltPhysics
+	url = https://github.com/jrouwe/JoltPhysics.git
