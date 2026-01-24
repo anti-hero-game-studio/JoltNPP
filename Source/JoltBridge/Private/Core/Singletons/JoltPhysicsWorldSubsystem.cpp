@@ -631,7 +631,6 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 		JoltHelpers::ToJoltRotation(T.GetRotation()),
 		MotionType,
 		Layer);
-
 	
 	
 	ShapeSettings.mAllowSleeping = Options.bCanBodyEverSleep;

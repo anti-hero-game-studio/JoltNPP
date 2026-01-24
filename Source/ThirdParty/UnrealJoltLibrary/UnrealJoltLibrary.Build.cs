@@ -192,10 +192,10 @@ public class UnrealJoltLibrary : ModuleRules
 		}
 
 		BuildJolt(buildType, Target);
-		// Specify these files should trigger a rebuild
-		ExternalDependencies.Add(Path.Combine(ThirdPartyJoltPath, "Jolt"));
-		//--- Now add the Jolt include paths
+		// Add the include path (parent of Jolt/ folder)
 		PublicIncludePaths.Add(ThirdPartyJoltPath);
+		PublicSystemIncludePaths.Add(ThirdPartyJoltPath);
+
 
 		// Now add the Jolt macros on the Module: for well-formed ABI ---
 		// Available defines https://jrouwe.github.io/JoltPhysics/md__build_2_r_e_a_d_m_e.html#autotoc_md70
@@ -258,6 +258,16 @@ public class UnrealJoltLibrary : ModuleRules
 		}
 
 		PublicAdditionalLibraries.Add(libPath);
+
+// Optional: explicitly tell UBT about the header directory for better IDE support
+		if (Target.bGenerateProjectFiles)
+		{
+			RuntimeDependencies.Add(Path.Combine(ThirdPartyJoltPath, "Jolt", "..."));
+		}
+		
+		
+		bEnableExceptions = true; // Jolt uses exceptions
+		PublicSystemIncludePaths.Add(ThirdPartyJoltPath);
 
 
 	}
