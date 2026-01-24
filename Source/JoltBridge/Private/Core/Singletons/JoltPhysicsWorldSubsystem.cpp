@@ -25,11 +25,19 @@
 #include "PhysicsEngine/ConvexElem.h"
 
 int32 DrawDebugShapes = 0;
-static FAutoConsoleVariableRef CVarDisableDataCopyInPlace(
-	TEXT("j.debug.draw"),
+static FAutoConsoleVariableRef CVarDrawDebugShapes(
+	TEXT("j.debug.draw.shapes"),
 	DrawDebugShapes,
-	TEXT("Show the joltBridge collision Shapes according to the joltBridge world view"),
+	TEXT("Show the jolt collision Shapes according to the jolt world view"),
 	ECVF_Default);
+
+float DrawDebugTraces = 0;
+static FAutoConsoleVariableRef CVarDrawDebugTraces(
+	TEXT("j.debug.draw.traces"),
+	DrawDebugTraces,
+	TEXT("Show the jolt trace queries according to the jolt world view. The value you enter is also the amount of time the traces will be drawn"),
+	ECVF_Default);
+
 
 const FVector UE_WORLD_ORIGIN = FVector(0);
 
@@ -165,8 +173,8 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 			JoltHelpers::BuildResponseMasks(ResponseContainer, UserData->BlockMask, UserData->OverlapMask, UserData->CombinedMask);
 			UserData->ObjectChannel = (uint8)P->GetCollisionObjectType();
 			
-			UserData->DefaultRestitution = Options.Restitution; // TODO:@GreggoryAddison::CodeCompletion || Support Physics Material values
-			UserData->DefaultSlidingFriction = Options.Friction; // TODO:@GreggoryAddison::CodeCompletion || Support Physics Material values
+			UserData->DefaultRestitution = Options.GetDesiredRestitution(); 
+			UserData->DefaultSlidingFriction = Options.GetDesiredFriction(); 
 			UserData->ShapeRadius = UnrealShape.ShapeRadius;
 			UserData->ShapeHeight = UnrealShape.ShapeHeight;
 			UserData->ShapeWidth = UnrealShape.ShapeWidth;
@@ -192,6 +200,8 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 					A->bGenerateOverlapEventsDuringLevelStreaming = false;
 				}
 			}
+
+			P->SetCanEverAffectNavigation(Options.bCanBodyEverAffectNavigation);
 			
 			//TODO:@GreggoryAddison::CodeOptimization || If both bGenerateOverlapEventsInChaos && bGenerateCollisionEventsInChaos destroy the Chaos FBodyInstance.
 			
@@ -421,11 +431,13 @@ void UJoltPhysicsWorldSubsystem::CleanUpJoltBridgeWorld()
 	BodyInterface = nullptr;
 	ContactListener = nullptr;
 	JoltWorker = nullptr;
+	UEGroupFilter = nullptr;	
 	
 #ifdef JPH_DEBUG_RENDERER
 	JoltDebugRendererImpl = nullptr;
 	DrawSettings = nullptr;
 #endif
+	
 
 	// Clear our type-specific arrays (duplicate refs)
 	BodyIDBodyMap.Empty();
@@ -679,20 +691,29 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 	{
 		ShapeSettings.mIsSensor = true;
 	}
+
+	if (Options.GravityOverrideType == EGravityOverrideType::FROM_MOVER)
+	{
+		// Gravity will come directly from the mover component.
+		ShapeSettings.mGravityFactor = 0;
+	}
 	
 	
 	// In your subsystem (lifetime >= bodies):
-	/*TUniquePtr<FUnrealGroupFilter> UEGroupFilter;
+	if (!UEGroupFilter)
+	{
+		UEGroupFilter = new FUnrealGroupFilter();
+	};
 	
 	uint32 Lo, Hi;
 	JoltHelpers::PackDataToGroupIDs(UserData, Lo, Hi);
 
 	JPH::CollisionGroup CG;
-	CG.SetGroupFilter(UEGroupFilter.Get());
+	CG.SetGroupFilter(UEGroupFilter);
 	CG.SetGroupID(Lo);
 	CG.SetSubGroupID(Hi);
 	
-	ShapeSettings.mCollisionGroup = CG;*/
+	ShapeSettings.mCollisionGroup = CG;
 
 	// TODO:@GreggoryAddison::CodeCompletion || Figure out how to handle an object that can be both a collider and a sensor
 	// This will require using the overlap and collision masks to make a filter.
@@ -704,7 +725,18 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 
 void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const
 {
+	const int32& ShapeId = FindShapeId(Target);
+	if (ShapeId == INDEX_NONE) return;
 	
+	const JPH::BodyID ID(ShapeId);
+	BodyInterface->SetPositionRotationAndVelocity
+	(
+		ID, 
+		JoltHelpers::ToJoltPosition(Transforms.GetLocation()),
+		JoltHelpers::ToJoltRotation(Transforms.GetRotation()), 
+		JoltHelpers::ToJoltVector3(Velocity),
+		JoltHelpers::ToJoltVector3(AngularVelocity)
+	);
 }
 
 void UJoltPhysicsWorldSubsystem::GetPhysicsState(const UPrimitiveComponent* Target, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity,FVector& Force)
@@ -1071,16 +1103,16 @@ int32 UJoltPhysicsWorldSubsystem::LineTraceSingle(const FVector& Start, const FV
 	
 	ConstructHitResult(Collector, OutHit);
 	
-	if (DrawDebugShapes > 0)
+	if (DrawDebugTraces > 0)
 	{
 		if (OutHit.bBlockingHit)
 		{
-			DrawDebugLine(GetWorld(), Start, OutHit.Location, FColor::Green, false, 10.f, 0, 1);
-			DrawDebugSolidBox(GetWorld(), OutHit.Location, FVector(10.f), FColor::Red, false, 10.f, 1);
+			DrawDebugLine(GetWorld(), Start, OutHit.Location, FColor::Green, false, DrawDebugTraces, 0, 1);
+			DrawDebugSolidBox(GetWorld(), OutHit.Location, FVector(10.f), FColor::Red, false, DrawDebugTraces, 1);
 		}
 		else
 		{
-			DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 10.f, 0, 1);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, DrawDebugTraces, 0, 1);
 		}
 	}
 	
@@ -1130,18 +1162,18 @@ TArray<int32> UJoltPhysicsWorldSubsystem::LineTraceMulti(const FVector& Start, c
 	
 	ConstructHitResult(Collector, OutHits);
 	
-	if (DrawDebugShapes > 0)
+	if (DrawDebugTraces > 0)
 	{
 		for (const FHitResult& Hit : OutHits)
 		{
 			if (Hit.bBlockingHit)
 			{
-				DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Green, false, 10.f, 0, 1);
-				DrawDebugSolidBox(GetWorld(), Hit.Location, FVector(10.f), FColor::Red, false, 10.f, 1);
+				DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Green, false, DrawDebugTraces, 0, 1);
+				DrawDebugSolidBox(GetWorld(), Hit.Location, FVector(10.f), FColor::Red, false, DrawDebugTraces, 1);
 			}
 			else
 			{
-				DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 10.f, 0, 1);
+				DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, DrawDebugTraces, 0, 1);
 			}
 		}
 	}
@@ -1167,32 +1199,25 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	
 	const JPH::Shape* CollisionShape = ProcessShapeElement(Shape);
 
-	if (Shape.IsBox())
+	if (DrawDebugTraces > 0)
 	{
-		if (DrawDebugShapes > 0)
+		if (Shape.IsBox())
 		{
-			DrawDebugBox(GetWorld(), Start, Shape.GetBox(), Rotation, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugBox(GetWorld(), End, Shape.GetBox(), Rotation, FColor::Green, false, 10.f);
+			DrawDebugBox(GetWorld(), Start, Shape.GetBox(), Rotation, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugBox(GetWorld(), End, Shape.GetBox(), Rotation, FColor::Green, false, DrawDebugTraces);
 		}
-	}
-	else if (Shape.IsSphere())
-	{
-		if (DrawDebugShapes > 0)
+		else if (Shape.IsSphere())
 		{
-			DrawDebugSphere(GetWorld(), Start, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugSphere(GetWorld(), End, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, 10.f);
-			
+			DrawDebugSphere(GetWorld(), Start, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugSphere(GetWorld(), End, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
 		}
-	}
-	else if (Shape.IsCapsule())
-	{
-		if (DrawDebugShapes > 0)
+		else if (Shape.IsCapsule())
 		{
-			DrawDebugCapsule(GetWorld(), Start, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, 10.f);
+			DrawDebugCapsule(GetWorld(), Start, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, DrawDebugTraces);
 		}
 	}
 	
@@ -1265,6 +1290,19 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	
 	ConstructHitResult(Collector, OutHit);
 	
+	if (DrawDebugTraces > 0)
+	{
+		if (OutHit.bBlockingHit)
+		{
+			DrawDebugLine(GetWorld(), Start, OutHit.Location, FColor::Green, false, DrawDebugTraces, 0, 1);
+			DrawDebugSolidBox(GetWorld(), OutHit.Location, FVector(10.f), FColor::Red, false, DrawDebugTraces, 1);
+		}
+		else
+		{
+			DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, DrawDebugTraces, 0, 1);
+		}
+	}
+	
 	return Collector.mBodyID.GetIndex();
 }
 
@@ -1282,34 +1320,28 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 	
 	const JPH::Shape* CollisionShape = ProcessShapeElement(Shape);
 
-	if (Shape.IsBox())
+	if (DrawDebugTraces > 0)
 	{
-		if (DrawDebugShapes > 0)
+		if (Shape.IsBox())
 		{
-			DrawDebugBox(GetWorld(), Start, Shape.GetBox(), Rotation, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugBox(GetWorld(), End, Shape.GetBox(), Rotation, FColor::Green, false, 10.f);
+			DrawDebugBox(GetWorld(), Start, Shape.GetBox(), Rotation, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugBox(GetWorld(), End, Shape.GetBox(), Rotation, FColor::Green, false, DrawDebugTraces);
+		}
+		else if (Shape.IsSphere())
+		{
+			DrawDebugSphere(GetWorld(), Start, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugSphere(GetWorld(), End, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
+		}
+		else if (Shape.IsCapsule())
+		{
+			DrawDebugCapsule(GetWorld(), Start, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Magenta, false, DrawDebugTraces);
+			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
+			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, DrawDebugTraces);
 		}
 	}
-	else if (Shape.IsSphere())
-	{
-		if (DrawDebugShapes > 0)
-		{
-			DrawDebugSphere(GetWorld(), Start, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugSphere(GetWorld(), End, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, 10.f);
-			
-		}
-	}
-	else if (Shape.IsCapsule())
-	{
-		if (DrawDebugShapes > 0)
-		{
-			DrawDebugCapsule(GetWorld(), Start, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Magenta, false, 10.f);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow);
-			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, 10.f);
-		}
-	}
+	
 	
 	FVector FinalEnd = End;
 	if (Start.Equals(End))
@@ -1378,18 +1410,18 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 	
 	ConstructHitResult(Collector, OutHits);
 	
-	if (DrawDebugShapes > 0)
+	if (DrawDebugTraces > 0)
 	{
 		for (const FHitResult& Hit : OutHits)
 		{
 			if (Hit.bBlockingHit)
 			{
-				DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Green, false, 10.f, 0, 1);
-				DrawDebugSolidBox(GetWorld(), Hit.Location, FVector(10.f), FColor::Red, false, 10.f, 1);
+				DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Green, false, DrawDebugTraces, 0, 1);
+				DrawDebugSolidBox(GetWorld(), Hit.Location, FVector(10.f), FColor::Red, false, DrawDebugTraces, 1);
 			}
 			else
 			{
-				DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 10.f, 0, 1);
+				DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, DrawDebugTraces, 0, 1);
 			}
 		}
 	}
@@ -2002,6 +2034,142 @@ const UPhysicalMaterial* UJoltPhysicsWorldSubsystem::GetUEPhysicsMaterial(const 
 }
 
 
+#pragma region SNAPSHOT HISTORY
+static constexpr int32 MinSnapshotCapacity = 8;
 
+int32 UJoltPhysicsWorldSubsystem::RoundUpToPowerOfTwo(int32 Value)
+{
+	if (Value <= 1) return 1;
+	// Round up to next power of two
+	Value--;
+	Value |= Value >> 1;
+	Value |= Value >> 2;
+	Value |= Value >> 4;
+	Value |= Value >> 8;
+	Value |= Value >> 16;
+	Value++;
+	return Value;
+}
+
+void UJoltPhysicsWorldSubsystem::InitializeSnapshotHistory()
+{
+	int32 Desired = JoltSettings->SnapshotHistoryCapacity;
+	Desired = FMath::Max(Desired, MinSnapshotCapacity);
+
+	if (JoltSettings->bForcePowerOfTwoSnapshotCapacity)
+	{
+		Desired = RoundUpToPowerOfTwo(Desired);
+	}
+
+	;
+
+	SnapshotHistory.SetNum(Desired);
+	for (FJoltPhysicsSnapshotSlot& Slot : SnapshotHistory)
+	{
+		Slot.Reset();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("UJoltPhysicsWorldSubsystem: Snapshot history initialized. Capacity=%d"), Desired);
+}
+
+void UJoltPhysicsWorldSubsystem::EnsureSnapshotHistoryReady()
+{
+	if (SnapshotHistory.Num() <= 0)
+	{
+		InitializeSnapshotHistory();
+	}
+}
+
+int32 UJoltPhysicsWorldSubsystem::FrameToSlotIndex(const int32 CommandFrame) const
+{
+	// NOTE: CommandFrame should be >= 0. If you use negative sentinel frames, handle them outside.
+	const int32 Capacity = SnapshotHistory.Num();
+	check(Capacity > 0);
+
+	// Fast path if power-of-two
+	if (JoltSettings->bForcePowerOfTwoSnapshotCapacity && FMath::IsPowerOfTwo(Capacity))
+	{
+		return CommandFrame & (Capacity - 1);
+	}
+
+	// General modulo
+	// (CommandFrame assumed non-negative)
+	return CommandFrame % Capacity;
+}
+
+void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, const JPH::StateRecorderFilter* SaveFilter)
+{
+	if (!JoltSettings->bStoreSnapshotsOnServer && (GetWorld()->GetNetMode() == NM_DedicatedServer))
+	{
+		return;
+	}
+	
+	EnsureSnapshotHistoryReady();
+
+	check(CommandFrame != INDEX_NONE);
+	check(MainPhysicsSystem != nullptr);
+
+	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
+	FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+
+	// Create a recorder on the stack (no heap alloc needed).
+	JPH::StateRecorderImpl Recorder;
+
+	// Save only "Bodies" state per your earlier approach; adjust if you need more.
+	// If you later decide to include constraints, broaden EStateRecorderState accordingly.
+	MainPhysicsSystem->SaveState(Recorder, JPH::EStateRecorderState::Bodies, SaveFilter);
+
+	const std::string Data = Recorder.GetData();
+
+	// Overwrite (do NOT append). This keeps memory bounded.
+	Slot.Frame = CommandFrame;
+	Slot.Bytes.SetNumUninitialized(static_cast<int32>(Data.size()));
+	if (!Slot.Bytes.IsEmpty())
+	{
+		FMemory::Memcpy(Slot.Bytes.GetData(), Data.data(), Data.size());
+	}
+}
+
+bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(int32 CommandFrame)
+{
+	EnsureSnapshotHistoryReady();
+
+	check(CommandFrame != INDEX_NONE);
+	check(MainPhysicsSystem != nullptr);
+
+	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
+	const FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+
+	// Validate that this slot still represents the requested frame
+	if (Slot.Frame != CommandFrame)
+	{
+		// Slot was overwritten or never written; history window not large enough or frame mismatch.
+		return false;
+	}
+
+	if (Slot.Bytes.Num() <= 0)
+	{
+		return false;
+	}
+
+	JPH::StateRecorderImpl Recorder;
+	Recorder.WriteBytes(Slot.Bytes.GetData(), Slot.Bytes.Num());
+
+	MainPhysicsSystem->RestoreState(Recorder);
+	return true;
+}
+
+bool UJoltPhysicsWorldSubsystem::HasStateForFrame(int32 CommandFrame) const
+{
+	if (SnapshotHistory.Num() <= 0 || CommandFrame == INDEX_NONE)
+	{
+		return false;
+	}
+
+	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
+	const FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+	return Slot.Frame == CommandFrame && Slot.Bytes.Num() > 0;
+}
+#pragma endregion
 
 

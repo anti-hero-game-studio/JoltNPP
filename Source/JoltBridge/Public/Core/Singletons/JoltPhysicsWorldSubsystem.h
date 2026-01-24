@@ -12,6 +12,34 @@
 #include "GameFramework/Actor.h"
 #include "JoltPhysicsWorldSubsystem.generated.h"
 
+class FUnrealGroupFilter;
+
+namespace JPH
+{
+	class PhysicsSystem;
+	class StateRecorderFilter;
+}
+
+USTRUCT()
+struct FJoltPhysicsSnapshotSlot
+{
+	GENERATED_BODY()
+
+	// The command frame this slot currently represents. If not equal to the requested frame,
+	// the slot is stale/overwritten/invalid for that frame.
+	UPROPERTY()
+	int32 Frame = INDEX_NONE;
+
+	// Raw snapshot bytes for Jolt::SaveState.
+	UPROPERTY()
+	TArray<uint8> Bytes;
+
+	void Reset()
+	{
+		Frame = INDEX_NONE;
+		Bytes.Reset();
+	}
+};
 
 class FJoltDebugRenderer;
 class FRaycastCollector_AllHits;
@@ -254,7 +282,7 @@ public:
 	
 	JPH::Body* AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
 
-	static JPH::BodyCreationSettings MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::BodyCreationSettings MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
 	
 private:
 	
@@ -336,7 +364,7 @@ private:
 	bool BroadcastPendingAddedContactEvents();
 	bool BroadcastPendingRemovedContactEvents();
 	
-	
+	FUnrealGroupFilter* UEGroupFilter = nullptr;
 	TArray<TUniquePtr<FJoltUserData>> UserDataStore;
 	
 	FCollisionResponseContainer DefaultCollisionResponseContainer;
@@ -351,4 +379,44 @@ private:
 	
 	
 #pragma endregion 
+	
+	
+#pragma region SNAPSHOT HISTORY
+public:
+	
+	// Call once after physics system is created (or on Initialize) to allocate snapshot slots.
+	void InitializeSnapshotHistory();
+
+	// Save snapshot for a specific command frame. Filter can be null.
+	// This overwrites the ring slot for that frame index.
+	void SaveStateForFrame(int32 CommandFrame, const JPH::StateRecorderFilter* SaveFilter = nullptr);
+
+	// Restore snapshot for a specific command frame. Returns false if the snapshot is missing/stale.
+	bool RestoreStateForFrame(int32 CommandFrame);
+
+	// Optional utilities
+	bool HasStateForFrame(int32 CommandFrame) const;
+	int32 GetSnapshotHistoryCapacity() const { return SnapshotHistory.Num(); }
+
+private:
+	// Convert frame -> slot index
+	int32 FrameToSlotIndex(int32 CommandFrame) const;
+
+	// Ensures SnapshotHistory is allocated and capacity sane.
+	void EnsureSnapshotHistoryReady();
+
+	// Round up to power-of-two (min 1)
+	static int32 RoundUpToPowerOfTwo(int32 Value);
+
+private:
+	// Circular buffer of snapshots.
+	UPROPERTY(Transient)
+	TArray<FJoltPhysicsSnapshotSlot> SnapshotHistory;
+	
+	UPROPERTY(transient)
+	int32 SnapshotHistoryCapacity = 256;
+	
+	
+	
+#pragma endregion
 };

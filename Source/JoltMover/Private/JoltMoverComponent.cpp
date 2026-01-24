@@ -454,13 +454,6 @@ void UJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncState, con
 void UJoltMoverComponent::FinalizeFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::FinalizeFrame);
-
-	bool bIsSimProxy = false;
-	if (GetOwnerRole() == ROLE_SimulatedProxy)
-	{
-		bIsSimProxy = true;
-	}
-	
 	
 	// TODO: Revisit this location check -- it seems simplistic now that we have composable state. Consider supporting a version that allows each sync state data struct a chance to react.
 	// The component will often be in the "right place" already on FinalizeFrame, so a comparison check makes sense before setting it.

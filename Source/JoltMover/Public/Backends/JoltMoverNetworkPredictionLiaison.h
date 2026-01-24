@@ -25,7 +25,8 @@ using KinematicMoverStateTypes = TJoltNetworkPredictionStateTypes<FJoltMoverInpu
  * This class is set on a Mover component as the "back end".
  */
 UCLASS(MinimalAPI)
-class UJoltMoverNetworkPredictionLiaisonComponent : public UJoltNetworkPredictionComponent, public IJoltMoverBackendLiaisonInterface
+class 
+UJoltMoverNetworkPredictionLiaisonComponent : public UJoltNetworkPredictionComponent, public IJoltMoverBackendLiaisonInterface
 {
 	GENERATED_BODY()
 

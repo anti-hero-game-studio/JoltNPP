@@ -141,6 +141,7 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 		const FJoltMoverTargetSyncState* T = SyncState->Collection.FindDataByType<FJoltMoverTargetSyncState>(); 
 		if (S && T)
 		{
+			Subsystem->RestoreStateForFrame(NextFrameNum);
 			Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace(), S->GetVelocity_WorldSpace(), S->GetAngularVelocityDegrees_WorldSpace());
 		}
 	}

@@ -307,11 +307,11 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 			for (int32 Frame=RollbackFrame; Frame < EndFrame; ++Frame)
 			{
 				
-				const int32 ServerInputFrame = Frame + FixedTickState.Offset;
+				/*const int32 ServerInputFrame = Frame + FixedTickState.Offset;
 				UE_LOG(LogJoltNetworkPrediction, Warning, TEXT(" [F]Previous Pending Frame = %d"), FixedTickState.PendingFrame);
 				UE_LOG(LogJoltNetworkPrediction, Warning, TEXT(" [F]Roll Back Frame = %d"), Frame);
 				UE_LOG(LogJoltNetworkPrediction, Warning, TEXT(" [F]Next Time Stamp Frame = %d"), FixedTickState.GetNextTimeStep().Frame);
-				UE_LOG(LogJoltNetworkPrediction, Warning, TEXT(" [F]Server Frame = %d"), ServerInputFrame);
+				UE_LOG(LogJoltNetworkPrediction, Warning, TEXT(" [F]Server Frame = %d"), ServerInputFrame);*/
 				FixedTickState.PendingFrame = Frame;
 				FJoltNetSimTimeStep Step = FixedTickState.GetNextTimeStep();
 				FJoltServiceTimeStep ServiceStep = FixedTickState.GetNextServiceTimeStep();
@@ -323,18 +323,18 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 				// bFirstStep will indicate that even if they don't have a correction, they need to rollback their historic state
 				for (TUniquePtr<IJoltFixedRollbackService>& Ptr : Services.FixedRollback.Array)
 				{
-					UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover Pre-StepRollBack : Frame = %d"), Frame);
+					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover Pre-StepRollBack : Frame = %d"), Frame);
 					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
 				}
 				for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
 				{
-					UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
+					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
 					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
 				}
 				// Run Sim ticks
 				for (TUniquePtr<IJoltFixedRollbackService>& Ptr : Services.FixedRollback.Array)
 				{
-					UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover StepRollBack : Frame = %d"), Frame);
+					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover StepRollBack : Frame = %d"), Frame);
 					Ptr->StepRollback(Step, ServiceStep);
 				}
 				
@@ -346,8 +346,8 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 						//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Step : Frame = %d"), Frame);
 						const double FixedTimeStep = Step.StepMS * 0.001;
 						Subsystem->StepPhysics(FixedTimeStep);
+						Subsystem->SaveStateForFrame(Frame);
 					}
-				
 				}
 				
 				// TODO:@GreggoryAddison::CodeModularity || This will need to be wrapped in a boolean in order to support a Kinematic body using jolt.
@@ -484,6 +484,7 @@ void UJoltNetworkPredictionWorldManager::BeginNewSimulationFrame_Internal(float 
 						//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("[MSL] Time | DeltaTime = %f | Frame = %d"), DeltaTimeSeconds, Step.Frame);
 						const double FixedTimeStep = Step.StepMS * 0.001;
 						Subsystem->StepPhysics(FixedTimeStep);
+						Subsystem->SaveStateForFrame(Step.Frame);
 					}
 				
 				}

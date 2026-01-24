@@ -123,6 +123,23 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = Settings)
 	bool bEnableDebugRenderer;
+	
+	// --- Snapshot config ---
+	// Keep this reasonably small: rollback window frames + safety margin.
+	// Power-of-two makes modulo cheap, but is not required.
+	UPROPERTY(EditAnywhere, Category="Jolt|Rollback")
+	int32 SnapshotHistoryCapacity = 256;
+
+	// If true, enforce power-of-two capacity (round up) for faster indexing.
+	UPROPERTY(EditAnywhere, Category="Jolt|Rollback")
+	bool bForcePowerOfTwoSnapshotCapacity = true;
+	
+	/*If true the server will also store the physics state this will cost memory. 
+	 * If you don't need the authoritative state stored leave this off. 
+	 * Most titles won't need this since the authoritative state is already being written into the sync state. 
+	 */
+	UPROPERTY(EditAnywhere, Category="Jolt|Rollback")
+	bool bStoreSnapshotsOnServer = false;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

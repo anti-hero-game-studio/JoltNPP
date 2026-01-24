@@ -176,6 +176,7 @@ enum class EGravityOverrideType : uint8
 	VECTOR_CURVE = 2 UMETA(Hidden), // TODO:@GreggoryAddison
 	STATIC_FLOAT = 3,
 	FLOAT_CURVE = 4,
+	FROM_MOVER = 4,
 };
 
 
@@ -200,6 +201,10 @@ struct FJoltBodyOptions
 	/* Useful for player controlled bodies that should never be sent to sleep*/
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	bool bCanBodyEverSleep = false;
+	
+	/* Turning this on adds an added cost to move each body in chaos. If you are using built-in AI pathing logic this needs to be true unless you roll your own avoidance system.*/
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bCanBodyEverAffectNavigation = false;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	bool bUsePhysicsMaterial = false;
@@ -241,7 +246,20 @@ struct FJoltBodyOptions
 	float GravityScale_Static = 1.0f;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta=(EditCondition="GravityOverrideType == EGravityOverrideType::FLOAT_CURVE && ShapeType != EJoltShapeType::STATIC", EditConditionHides), DisplayName="Gravity Scale")
-	TObjectPtr<UCurveFloat> GravityScale_Dynamic;;
+	TObjectPtr<UCurveFloat> GravityScale_Dynamic;
+	
+	
+	float GetDesiredRestitution() const
+	{
+		// TODO:@GreggoryAddison::CodeCompletion || Support Physics Material values
+		return Restitution;
+	}
+	
+	float GetDesiredFriction() const
+	{
+		// TODO:@GreggoryAddison::CodeCompletion || Support Physics Material values
+		return Friction;
+	}
 	
 };
 
