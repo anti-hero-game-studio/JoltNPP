@@ -7,13 +7,13 @@
 #include "JoltCallBackContactListener.generated.h"
 
 USTRUCT(BlueprintType)
-struct FContactInfo
+struct FContactAddedInfo
 {
 	GENERATED_USTRUCT_BODY();
 
-	FContactInfo() = default;
+	FContactAddedInfo() = default;
 
-	FContactInfo(const int32 BodyID1, const int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation, const float NormalImpulse, const FVector& NormalDir, const bool bIsOverlap)
+	FContactAddedInfo(const int32 BodyID1, const int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation, const float NormalImpulse, const FVector& NormalDir, const bool bIsOverlap)
 		: BodyID1(BodyID1)
 		, BodyID2(BodyID2)
 		, BodyID1ContactLocation(BodyID1ContactLocation)
@@ -38,6 +38,23 @@ struct FContactInfo
 	bool bIsOverlap;
 };
 
+USTRUCT(BlueprintType)
+struct FContactRemovedInfo
+{
+	GENERATED_BODY()
+	
+	FContactRemovedInfo() = default;
+	
+	FContactRemovedInfo(const int32 InBodyID1, const int32 InBodyID2)
+		: BodyID1(InBodyID1), BodyID2(InBodyID2)
+	{
+		
+	}
+	
+	int32 BodyID1;
+	int32 BodyID2;
+};
+
 /**
  * 
  */
@@ -53,13 +70,19 @@ public:
 
 	virtual void OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) override;
 
-	bool Consume(FContactInfo& OutItem)
+	bool ConsumeAddedContacts(FContactAddedInfo& OutItem)
 	{
-		return Queue.Dequeue(OutItem);
+		return AddedContactQueue.Dequeue(OutItem);
+	}
+	
+	bool ConsumeRemovedContacts(FContactRemovedInfo& OutItem)
+	{
+		return RemovedContactQueue.Dequeue(OutItem);
 	}
 
-	TQueue<FContactInfo, EQueueMode::Mpsc>* GetContactQueue() { return &Queue; };
+	TQueue<FContactAddedInfo, EQueueMode::Mpsc>* GetContactQueue() { return &AddedContactQueue; };
 
 private:
-	TQueue<FContactInfo, EQueueMode::Mpsc> Queue = TQueue<FContactInfo, EQueueMode::Mpsc>();
+	TQueue<FContactAddedInfo, EQueueMode::Mpsc> AddedContactQueue = TQueue<FContactAddedInfo, EQueueMode::Mpsc>();
+	TQueue<FContactRemovedInfo, EQueueMode::Mpsc> RemovedContactQueue = TQueue<FContactRemovedInfo, EQueueMode::Mpsc>();
 };

@@ -133,6 +133,18 @@ struct FUnrealShapeDescriptor
 		return INDEX_NONE;
 	}
 	
+	UPrimitiveComponent* Find(const uint32& T) const
+	{
+		for (const FUnrealShape& S : Shapes)
+		{
+			if (!S.Shape.Get()) continue;
+			if (S.Id != T) continue;
+			return S.Shape.Get();
+		}
+		
+		return nullptr;
+	}
+	
 	const FCollisionResponseContainer& GetCollisionResponseContainer(const UPrimitiveComponent* Target) const
 	{
 		for (const FUnrealShape& S : Shapes)
@@ -256,8 +268,10 @@ struct FJoltUserData
 
 	// Collision policy data used in hot paths
 	uint8  ObjectChannel = 0;    // 0..31 (ECollisionChannel as uint8)
-	uint8  bQueryEnabled = 1;    // optional
-	uint8  bPhysicsEnabled = 1;  // optional
+	uint8  bQueryEnabled : 1 = 0;    // optional
+	uint8  bPhysicsEnabled: 1 = 0;  // optional
+	uint8  bGenerateOverlapEvents : 1 = 0;  // optional
+	uint8  bGenerateHitEvents : 1 = 0;  // optional
 	uint8  Pad = 0;
 
 	uint32 BlockMask = 0;        // bits for channels this blocks

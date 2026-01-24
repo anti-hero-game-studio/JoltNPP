@@ -7,12 +7,9 @@
 #include "Core/Libraries/JoltBridgeLibrary.h"
 #include "JoltBridgeMain.h"
 #include <functional>
-
 #include "Core/CollisionFilters/JoltFilters.h"
 #include "Core/DataTypes/JoltBridgeTypes.h"
 #include "GameFramework/Actor.h"
-#include "Subsystems/SubsystemCollection.h"
-#include "Templates/Function.h"
 #include "JoltPhysicsWorldSubsystem.generated.h"
 
 
@@ -20,7 +17,7 @@ class FJoltDebugRenderer;
 class FRaycastCollector_AllHits;
 class FSweepCastCollector_AllHits;
 class FClosestShapeCastHitCollector;
-class FirstRayCastHitCollector;
+class FRaycastCollector_FirstHit;
 class UJoltSettings;
 struct FJoltWorkerOptions;
 class FJoltWorker;
@@ -87,10 +84,7 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void GetPhysicsState(const UPrimitiveComponent* Target, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
-	
-	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
-	void GetMotionState(int Id, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
-	
+
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void StepPhysics(float FixedTimeStep = 0.016666667f);
 	
@@ -159,7 +153,7 @@ public:
 private:
 	
 	
-	void ConstructHitResult(const FirstRayCastHitCollector& Result, FHitResult& OutHit) const;
+	void ConstructHitResult(const FRaycastCollector_FirstHit& Result, FHitResult& OutHit) const;
 	void ConstructHitResult(const FClosestShapeCastHitCollector& Result, FHitResult& OutHit) const;
 	
 	void ConstructHitResult(const FSweepCastCollector_AllHits& Result, TArray<FHitResult>& OutHits) const;
@@ -243,7 +237,7 @@ private:
 		
 #pragma region JOLTBRIDGE SHAPE CREATION
 public:
-	
+	 
 	const JPH::BoxShape* GetBoxCollisionShape(const FVector& Dimensions, const JoltPhysicsMaterial* material = nullptr);
 
 	const JPH::SphereShape* GetSphereCollisionShape(float Radius, const JoltPhysicsMaterial* material = nullptr);
@@ -321,11 +315,15 @@ public:
 	
 	const FCollisionResponseContainer& GetCollisionResponseContainer(const UPrimitiveComponent* Target) const;
 	
+	UPrimitiveComponent* GetPrimitiveComponent(const uint32& Id) const;
+	static UPrimitiveComponent* GetPrimitiveComponent(const uint64& UserDataPtr);
+	
 	JPH::BodyInterface* GetBodyInterface() const { return BodyInterface; };
 	JPH::Body* GetBody(const uint32& BodyID) const { return BodyIDBodyMap[BodyID];}
 	JPH::Body* GetRigidBody(const FHitResult& Hit) const;
 	JPH::Body* GetRigidBody(const UPrimitiveComponent* Target) const;
 	const FJoltUserData* GetUserData(const UPrimitiveComponent* Target) const;
+	static const FJoltUserData* GetUserData(const uint64& UserDataPtr);
 	
 	
 	
@@ -334,6 +332,10 @@ public:
 	
 
 private:
+	
+	bool BroadcastPendingAddedContactEvents();
+	bool BroadcastPendingRemovedContactEvents();
+	
 	
 	TArray<TUniquePtr<FJoltUserData>> UserDataStore;
 	

@@ -3,12 +3,11 @@
 #include "Engine/World.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "JoltBridgeMain.h"
-#include "Core/DataTypes/JoltBridgeTypes.h"
 
-class FirstRayCastHitCollector final : public JPH::CastRayCollector
+class FRaycastCollector_FirstHit final : public JPH::CastRayCollector
 {
 public:
-	FirstRayCastHitCollector(const JPH::PhysicsSystem& inPhysicsSystem, const JPH::RRayCast& inRay)
+	FRaycastCollector_FirstHit(const JPH::PhysicsSystem& inPhysicsSystem, const JPH::RRayCast& inRay)
 		: mPhysicsSystem(inPhysicsSystem), mRay(inRay)
 	{
 	}

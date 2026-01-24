@@ -24,8 +24,8 @@ void FJoltCallBackContactListener::OnContactAdded(const JPH::Body& inBody1, cons
 	for (uint8 i = 0; const JPH::CollisionEstimationResult::Impulse& impulse : result.mImpulses)
 	{
 		
-		Queue.Enqueue(
-			FContactInfo
+		AddedContactQueue.Enqueue(
+			FContactAddedInfo
 			(
 				inBody1.GetID().GetIndexAndSequenceNumber(),
 				inBody2.GetID().GetIndexAndSequenceNumber(),
@@ -49,5 +49,8 @@ void FJoltCallBackContactListener::OnContactPersisted(const JPH::Body& inBody1, 
 
 void FJoltCallBackContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) 
 {
-	ContactListener::OnContactRemoved(inSubShapePair);
+	RemovedContactQueue.Enqueue
+	(
+		FContactRemovedInfo(inSubShapePair.GetBody1ID().GetIndexAndSequenceNumber(), inSubShapePair.GetBody2ID().GetIndexAndSequenceNumber())
+	);
 };

@@ -2,7 +2,6 @@
 
 
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
-#include "JoltBridgeMain.h"
 #include "Core/DataTypes/JoltBridgeTypes.h"
 #include "JoltBridgeCoreSettings.h"
 #include "JoltBridgeLogChannels.h"
@@ -173,6 +172,8 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 			UserData->ShapeWidth = UnrealShape.ShapeWidth;
 			UserData->OwnerActor = Target;
 			UserData->PhysMaterial = Options.bUsePhysicsMaterial ? Options.PhysMaterial : nullptr;
+			UserData->bGenerateOverlapEvents = Options.bGenerateOverlapEventsInJolt;
+			UserData->bGenerateHitEvents = Options.bGenerateCollisionEventsInJolt;
 			
 			if (!Options.bGenerateCollisionEventsInChaos)
 			{
@@ -531,6 +532,27 @@ const FCollisionResponseContainer& UJoltPhysicsWorldSubsystem::GetCollisionRespo
 	return Desc.GetCollisionResponseContainer(Target); 
 }
 
+UPrimitiveComponent* UJoltPhysicsWorldSubsystem::GetPrimitiveComponent(const uint32& Id) const
+{
+	for (const TTuple<TWeakObjectPtr<AActor>, FUnrealShapeDescriptor>& Cache : GlobalShapeDescriptorDataCache)
+	{
+		UPrimitiveComponent* P = Cache.Value.Find(Id);
+		if (P != nullptr)
+		{
+			return P;
+		}
+	}
+	
+	return nullptr;
+}
+
+UPrimitiveComponent* UJoltPhysicsWorldSubsystem::GetPrimitiveComponent(const uint64& UserDataPtr)
+{
+	const FJoltUserData* D = reinterpret_cast<const FJoltUserData*>(UserDataPtr);
+	if (!D) return nullptr;
+	return Cast<UPrimitiveComponent>(D->Component);
+}
+
 JPH::Body* UJoltPhysicsWorldSubsystem::GetRigidBody(const FHitResult& Hit) const
 {
 	if (!Hit.GetComponent()) return nullptr;
@@ -556,6 +578,11 @@ const FJoltUserData* UJoltPhysicsWorldSubsystem::GetUserData(const UPrimitiveCom
 	const uint64 Data = BodyInterface->GetUserData(JPH::BodyID(ID));
 	
 	return reinterpret_cast<const FJoltUserData*>(Data);
+}
+
+const FJoltUserData* UJoltPhysicsWorldSubsystem::GetUserData(const uint64& UserDataPtr)
+{
+	return reinterpret_cast<const FJoltUserData*>(UserDataPtr);
 }
 
 JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape,  const FJoltBodyOptions& Options, const FJoltUserData* UserData)
@@ -641,12 +668,18 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 		msp.ScaleToMass(Options.Mass);
 		ShapeSettings.mMassPropertiesOverride = msp;
 		ShapeSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+		
+		if (Options.bKeepShapeVertical)
+		{
+			ShapeSettings.mAllowedDOFs = JPH::EAllowedDOFs::RotationY | JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ;
+		}
 	}
 
 	if (Options.bGenerateOverlapEventsInJolt && !Options.bGenerateCollisionEventsInJolt)
 	{
-		//ShapeSettings.
+		ShapeSettings.mIsSensor = true;
 	}
+	
 	
 	// In your subsystem (lifetime >= bodies):
 	/*TUniquePtr<FUnrealGroupFilter> UEGroupFilter;
@@ -693,11 +726,104 @@ void UJoltPhysicsWorldSubsystem::GetPhysicsState(const UPrimitiveComponent* Targ
 	
 }
 
-void UJoltPhysicsWorldSubsystem::GetMotionState(int Id, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force)
+bool UJoltPhysicsWorldSubsystem::BroadcastPendingAddedContactEvents()
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltPhysicsWorldSubsystem::GetMotionState);
-	if (Id == INDEX_NONE) return; 
+	FContactAddedInfo ContactInfo;
+	while (ContactListener && ContactListener->ConsumeAddedContacts(ContactInfo))
+	{
+		if (!BodyIDBodyMap.Contains(ContactInfo.BodyID1) || !BodyIDBodyMap.Contains(ContactInfo.BodyID2)) return true;
+		if (ContactInfo.bIsOverlap)
+		{
+			const FJoltUserData* UD1 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID1]->GetUserData());
+			const FJoltUserData* UD2 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID2]->GetUserData());
+			if (!UD1 || !UD2) return true;
+			
+			UPrimitiveComponent* P1 = Cast<UPrimitiveComponent>(UD1->Component);
+			UPrimitiveComponent* P2 = Cast<UPrimitiveComponent>(UD2->Component);
+			
+			if (!P1 || !P2) return true;
+
+			if (UD1->bGenerateOverlapEvents && P1->OnComponentBeginOverlap.IsBound())
+			{
+				P1->OnComponentBeginOverlap.Broadcast(P1, P2->GetOwner(), P2, ContactInfo.BodyID2, false, FHitResult(NoInit));
+			}
+			
+			if (UD2->bGenerateOverlapEvents && P2->OnComponentBeginOverlap.IsBound())
+			{
+				P2->OnComponentBeginOverlap.Broadcast(P2, P1->GetOwner(), P1, ContactInfo.BodyID1, false, FHitResult(NoInit));
+			}
+		}
+		else
+		{
+			const FJoltUserData* UD1 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID1]->GetUserData());
+			const FJoltUserData* UD2 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID2]->GetUserData());
+			if (!UD1 || !UD2) return true;
+			
+			UPrimitiveComponent* P1 = Cast<UPrimitiveComponent>(UD1->Component);
+			UPrimitiveComponent* P2 = Cast<UPrimitiveComponent>(UD2->Component);
+			
+			if (!P1 || !P2) return true;
+			
+			const FVector Impulse = ContactInfo.NormalDir * ContactInfo.NormalImpulse;
+			FHitResult Hit(NoInit);
+			if (UD1->bGenerateHitEvents && P1->OnComponentHit.IsBound())
+			{
+				
+				Hit.bBlockingHit = true;
+				Hit.Component = P2;
+				Hit.HitObjectHandle = P2->GetOwner();
+				Hit.Location = ContactInfo.BodyID1ContactLocation;
+				Hit.ImpactPoint = ContactInfo.BodyID1ContactLocation;
+				Hit.Distance = FVector::Distance(ContactInfo.BodyID1ContactLocation, ContactInfo.BodyID2ContactLocation);
+				Hit.Normal = ContactInfo.NormalDir;
+				Hit.ImpactNormal = ContactInfo.NormalDir;
+				P1->OnComponentHit.Broadcast(P1, P2->GetOwner(), P2, Impulse, Hit);
+			}
+			
+			if (UD2->bGenerateHitEvents && P2->OnComponentHit.IsBound())
+			{
+				Hit.bBlockingHit = true;
+				Hit.Component = P1;
+				Hit.HitObjectHandle = P1->GetOwner();
+				Hit.Location = ContactInfo.BodyID2ContactLocation;
+				Hit.ImpactPoint = ContactInfo.BodyID2ContactLocation;
+				Hit.Distance = FVector::Distance(ContactInfo.BodyID1ContactLocation, ContactInfo.BodyID2ContactLocation);
+				Hit.Normal = ContactInfo.NormalDir;
+				Hit.ImpactNormal = ContactInfo.NormalDir;
+				P2->OnComponentHit.Broadcast(P2, P1->GetOwner(), P1, Impulse, Hit);
+			}
+		}
+	}
+	return false;
+}
+
+bool UJoltPhysicsWorldSubsystem::BroadcastPendingRemovedContactEvents()
+{
+	FContactRemovedInfo ContactInfo;
+	while (ContactListener && ContactListener->ConsumeRemovedContacts(ContactInfo))
+	{
+		if (!BodyIDBodyMap.Contains(ContactInfo.BodyID1) || !BodyIDBodyMap.Contains(ContactInfo.BodyID2)) return false;
+		const FJoltUserData* UD1 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID1]->GetUserData());
+		const FJoltUserData* UD2 = GetUserData(BodyIDBodyMap[ContactInfo.BodyID2]->GetUserData());
+		if (!UD1 || !UD2) return false;
+			
+		UPrimitiveComponent* P1 = Cast<UPrimitiveComponent>(UD1->Component);
+		UPrimitiveComponent* P2 = Cast<UPrimitiveComponent>(UD2->Component);
+			
+		if (!P1 || !P2) return false;
+
+		if (UD1->bGenerateOverlapEvents && P1->OnComponentEndOverlap.IsBound())
+		{
+			P1->OnComponentEndOverlap.Broadcast(P1, P2->GetOwner(), P2, ContactInfo.BodyID2);
+		}
+			
+		if (UD2->bGenerateOverlapEvents && P2->OnComponentEndOverlap.IsBound())
+		{
+			P2->OnComponentEndOverlap.Broadcast(P2, P1->GetOwner(), P1, ContactInfo.BodyID1);
+		}
+	}
 	
+	return true;
 }
 
 void UJoltPhysicsWorldSubsystem::StepPhysics(float FixedTimeStep)
@@ -725,6 +851,16 @@ void UJoltPhysicsWorldSubsystem::StepPhysics(float FixedTimeStep)
 	if (OnPostPhysicsStep.IsBound())
 	{
 		OnPostPhysicsStep.Broadcast(FixedTimeStep);
+	}
+
+	if (BroadcastPendingAddedContactEvents())
+	{
+		UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Added Contact Events"))
+	}
+	
+	if (BroadcastPendingRemovedContactEvents())
+	{
+		UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Removed Contact Events"))
 	}
 }
 
@@ -902,7 +1038,7 @@ int32 UJoltPhysicsWorldSubsystem::LineTraceSingle(const FVector& Start, const FV
 	JPH::RayCastSettings	 Settings;
 	FVector					 dir = End/* - Start*/;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPosition(Start), JoltHelpers::ToJoltVector3(dir) };
-	FirstRayCastHitCollector Collector(*MainPhysicsSystem, ray);
+	FRaycastCollector_FirstHit Collector(*MainPhysicsSystem, ray);
 	
 	
 	if (ActorsToIgnore.IsEmpty())
@@ -1267,7 +1403,7 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 	return Results;
 }
 
-void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FirstRayCastHitCollector& Result, FHitResult& OutHit) const
+void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_FirstHit& Result, FHitResult& OutHit) const
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltPhysicsWorldSubsystem::ConstructHitResult);
 	UPhysicalMaterial* UEMat = nullptr;
