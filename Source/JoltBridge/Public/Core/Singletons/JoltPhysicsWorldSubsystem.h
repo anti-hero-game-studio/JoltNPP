@@ -86,7 +86,7 @@ public:
 	void K2_SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
-	void GetPhysicsState(int ID, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
+	void GetPhysicsState(const UPrimitiveComponent* Target, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void GetMotionState(int Id, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity, FVector& Force);
@@ -317,13 +317,14 @@ public:
 	bool HasSensorBodyBeenCreated(const UPrimitiveComponent* Target) const;
 	bool IsCollisionBodyActive(const UPrimitiveComponent* Target) const;
 	void SetRigidBodyActiveState(const UPrimitiveComponent* Target, bool Active) const;
-	void SetPhysicsState(int ID, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const;
+	void SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const;
 	
 	const FCollisionResponseContainer& GetCollisionResponseContainer(const UPrimitiveComponent* Target) const;
 	
 	JPH::BodyInterface* GetBodyInterface() const { return BodyInterface; };
 	JPH::Body* GetBody(const uint32& BodyID) const { return BodyIDBodyMap[BodyID];}
 	JPH::Body* GetRigidBody(const FHitResult& Hit) const;
+	JPH::Body* GetRigidBody(const UPrimitiveComponent* Target) const;
 	const FJoltUserData* GetUserData(const UPrimitiveComponent* Target) const;
 	
 	

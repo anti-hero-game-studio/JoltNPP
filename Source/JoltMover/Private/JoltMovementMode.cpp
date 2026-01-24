@@ -152,6 +152,46 @@ UJoltNullMovementMode::UJoltNullMovementMode(const FObjectInitializer& ObjectIni
 
 void UJoltBaseMovementMode::FloorCheck(const FVector& StartingLocation, const FVector& ProposedLinearVelocity, const float& DeltaTime, FJoltFloorCheckResult& Result) const
 {
+	Result.bBlockingHit = false;
+	Result.bWalkableFloor = false;
+	const UJoltMoverComponent* M = GetMoverComponent<UJoltMoverComponent>();
+	if (!M) return;
+	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
+	if (!Subsystem) return;
+	const UJoltCommonLegacyMovementSettings* SharedSettingsPtr = M->FindSharedSettings<UJoltCommonLegacyMovementSettings>();
+	if (!SharedSettingsPtr) return;
+	
+	const FVector& UpDir = M->GetUpDirection();
+	const FVector& Dir = -UpDir;
+	const FVector& End = StartingLocation + (Dir * FloorCheckDistance);
+	
+	int32 HitBodyId;
+	const FHitResult Hit = Subsystem->LineTraceSingleByChannel(StartingLocation, End, ECC_WorldStatic, {M->GetOwner()}, HitBodyId);
+	const bool bWalkable = UJoltFloorQueryUtils::IsHitSurfaceWalkable(Hit, UpDir, SharedSettingsPtr->MaxWalkSlopeCosine);
+	Result.bBlockingHit = Hit.bBlockingHit;
+	Result.bWalkableFloor = bWalkable;
+	Result.FloorDist = UpDir.Dot(StartingLocation - Hit.ImpactPoint);
+	Result.HitResult = Hit;
+	
+	// Update the ground distance based on the slope. If you are on a slope the query might hit on an edge
+	// rather than directly under the capsule. Also move back to the start location
+	const float DP = Hit.ImpactNormal.Dot(UpDir);
+	if (DP > UE_SMALL_NUMBER)
+	{
+		const JPH::Body* Rb = Subsystem->GetRigidBody(M->GetUpdatedComponent<UPrimitiveComponent>());
+		if (!Rb) return;
+
+		uint64 P = Rb->GetUserData();
+				
+		const FJoltUserData* D = reinterpret_cast<const FJoltUserData*>(P);
+		if (!D) return;
+				
+		Result.FloorDist += 2.0f *  D->ShapeRadius * (1.0f - DP) / DP
+			+ FVector::VectorPlaneProject(ProposedLinearVelocity* DeltaTime, Hit.ImpactNormal).Dot(UpDir);
+	}
+	
+	
+	
 }
 
 void UJoltNullMovementMode::SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState)

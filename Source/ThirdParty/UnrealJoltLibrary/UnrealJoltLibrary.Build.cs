@@ -31,7 +31,15 @@ public class UnrealJoltLibrary : ModuleRules
 		/*cmakeOptions += " -DDOUBLE_PRECISION=ON"; */ // Uncomment this if you need double precision. This is 8-10% slower
 		cmakeOptions += " -DCROSS_PLATFORM_DETERMINISTIC=ON ";
 		cmakeOptions += " -DOBJECT_LAYER_BITS=32 ";
-		cmakeOptions += " -DINTERPROCEDURAL_OPTIMIZATION=ON ";
+		
+		if (Target.Configuration == UnrealTargetConfiguration.Shipping)
+		{
+			cmakeOptions += " -DINTERPROCEDURAL_OPTIMIZATION=ON ";
+		}
+		else
+		{
+			cmakeOptions += " -DINTERPROCEDURAL_OPTIMIZATION=OFF ";
+		}
 		cmakeOptions += " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ";
 		cmakeOptions += " -DTARGET_SAMPLES=OFF ";
 		cmakeOptions += " -DTARGET_HELLO_WORLD=OFF";

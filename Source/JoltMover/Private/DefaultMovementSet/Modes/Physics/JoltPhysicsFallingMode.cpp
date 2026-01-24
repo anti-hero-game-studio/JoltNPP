@@ -174,6 +174,10 @@ void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulatio
 	const UPrimitiveComponent* UpdatedComponent = Cast<UPrimitiveComponent>(Params.MovingComps.UpdatedComponent.Get());
 	
 	if (!UpdatedComponent) return;
+	if (!MoverComponent) return;
+	
+	const UJoltMoverBlackboard* SimBlackboard = MoverComponent->GetSimBlackboard();
+	if (!SimBlackboard) return;
 
 	const FJoltProposedMove ProposedMove = Params.ProposedMove;
 
@@ -185,8 +189,12 @@ void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulatio
 	FJoltMoverTargetSyncState& OutputSyncState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltMoverTargetSyncState>();
 	
 	FJoltFloorCheckResult FloorResult;
-	FloorCheck(StartingSyncState->GetLocation_WorldSpace(), ProposedMove.LinearVelocity,Params.TimeStep.StepMs * 0.001f, FloorResult);
+	if (!SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, FloorResult))
+	{
+		FloorCheck(StartingSyncState->GetLocation_WorldSpace(), ProposedMove.LinearVelocity,Params.TimeStep.StepMs * 0.001f, FloorResult);
+	}
 
+	
 	if (FloorResult.bBlockingHit)
 	{
 		// We are grounded and need to switch movement modes

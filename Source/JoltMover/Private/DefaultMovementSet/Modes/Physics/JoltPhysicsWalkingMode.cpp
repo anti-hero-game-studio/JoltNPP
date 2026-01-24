@@ -2,7 +2,7 @@
 
 
 #include "DefaultMovementSet/Modes/Physics/JoltPhysicsWalkingMode.h"
-
+#include "JoltBridgeMain.h"
 #include "JoltMoverComponent.h"
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
 #include "DefaultMovementSet/Settings/JoltCommonLegacyMovementSettings.h"

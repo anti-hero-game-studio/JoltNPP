@@ -24,10 +24,11 @@ public:
 			return;
 		}
 
+		FColor RenderColor = World->GetNetMode() == NM_Client ? FColor::Blue : JoltHelpers::ToUnrealColor(inColor);
 		DrawDebugLine(World,
 			JoltHelpers::ToUnrealPosition(inFrom),
 			JoltHelpers::ToUnrealPosition(inTo),
-			JoltHelpers::ToUnrealColor(inColor));
+			RenderColor);
 	}
 
 	virtual void DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, JPH::RVec3Arg inV3, JPH::ColorArg inColor, ECastShadow inCastShadow) override
@@ -41,7 +42,7 @@ public:
 		FVector V2 = JoltHelpers::ToUnrealPosition(inV2);
 		FVector V3 = JoltHelpers::ToUnrealPosition(inV3);
 
-		FColor Color = JoltHelpers::ToUnrealColor(inColor);
+		FColor Color = World->GetNetMode() == NM_Client ? FColor::Blue : JoltHelpers::ToUnrealColor(inColor);
 
 		DrawDebugLine(World, V1, V2, Color, false, -1, 0, 1);
 		DrawDebugLine(World, V2, V3, Color, false, -1, 0, 1);
@@ -57,7 +58,7 @@ public:
 		}
 
 		FVector Position = JoltHelpers::ToUnrealPosition(inPosition);
-		FColor	Color = JoltHelpers::ToUnrealColor(inColor);
+		FColor Color = World->GetNetMode() == NM_Client ? FColor::Blue : JoltHelpers::ToUnrealColor(inColor);
 
 		FString TextString(inString.data());
 

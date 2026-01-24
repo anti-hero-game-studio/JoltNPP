@@ -809,17 +809,18 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::PostPhysicsTick);
 	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
+		if (!UpdatedCompAsPrimitive) return;
 		FJoltUpdatedMotionState& FinalState = SimOutput.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
 		
 		const int Id = Subsystem->GetActorRootShapeId(GetOwner());
 		FTransform T;
 		FVector V, A, F;
-		Subsystem->GetMotionState(Id, T, V, A, F);
+		Subsystem->GetPhysicsState(UpdatedCompAsPrimitive, T, V, A, F);
 		
-		const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
+		/*const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : Transform = %s"), *MyRole, *T.ToHumanReadableString());
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : LinearVelocity = %s"), *MyRole, *V.ToCompactString());
-		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());
+		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());*/
 		
 		//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
 		FinalState.SetTransforms_WorldSpace(T.GetLocation(), T.GetRotation().Rotator(), V, A, nullptr);
@@ -1117,7 +1118,7 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 				/*bRequireOverlapsEventFlagToQueueOverlaps*/ true);
 
 			FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
-			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::TeleportPhysics);
+			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::None);
 			UpdatedComponent->ComponentVelocity = WorldVelocity;
 		}
 		else

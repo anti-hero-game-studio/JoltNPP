@@ -202,7 +202,7 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 		{
 			if (JPH::Body* CollisionObject = AddRigidBodyCollider(Target, RelTransform, Shape, Options, UserData))
 			{
-				Descriptor.Shapes.Last().Id= CollisionObject->GetID().GetIndexAndSequenceNumber();
+				Descriptor.Shapes.Last().Id = CollisionObject->GetID().GetIndexAndSequenceNumber();
 			}
 			
 			GlobalShapeDescriptorDataCache.Add(Target, Descriptor);
@@ -222,8 +222,7 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 
 void UJoltPhysicsWorldSubsystem::K2_SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity)
 {
-	int32 Id = FindShapeId(Target);
-	SetPhysicsState(Id, Transforms, Velocity, AngularVelocity);
+	SetPhysicsState(Target, Transforms, Velocity, AngularVelocity);
 }
 
 
@@ -541,6 +540,14 @@ JPH::Body* UJoltPhysicsWorldSubsystem::GetRigidBody(const FHitResult& Hit) const
 	return GetBody(BodyId);
 }
 
+JPH::Body* UJoltPhysicsWorldSubsystem::GetRigidBody(const UPrimitiveComponent* Target) const
+{
+	if (!Target) return nullptr;
+	const int32 BodyId = FindShapeId(Target);
+	if (BodyId == INDEX_NONE) return nullptr;
+	return GetBody(BodyId);
+}
+
 const FJoltUserData* UJoltPhysicsWorldSubsystem::GetUserData(const UPrimitiveComponent* Target) const
 {
 	const int32 ID = FindShapeId(Target);
@@ -643,7 +650,7 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 	}
 	
 	// In your subsystem (lifetime >= bodies):
-	TUniquePtr<FUnrealGroupFilter> UEGroupFilter;
+	/*TUniquePtr<FUnrealGroupFilter> UEGroupFilter;
 	
 	uint32 Lo, Hi;
 	JoltHelpers::PackDataToGroupIDs(UserData, Lo, Hi);
@@ -653,7 +660,7 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 	CG.SetGroupID(Lo);
 	CG.SetSubGroupID(Hi);
 	
-	ShapeSettings.mCollisionGroup = CG;
+	ShapeSettings.mCollisionGroup = CG;*/
 
 	// TODO:@GreggoryAddison::CodeCompletion || Figure out how to handle an object that can be both a collider and a sensor
 	// This will require using the overlap and collision masks to make a filter.
@@ -663,13 +670,27 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 	return ShapeSettings;
 }
 
-void UJoltPhysicsWorldSubsystem::SetPhysicsState(const int ID, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const
+void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity) const
 {
 	
 }
 
-void UJoltPhysicsWorldSubsystem::GetPhysicsState(int ID, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity,FVector& Force)
+void UJoltPhysicsWorldSubsystem::GetPhysicsState(const UPrimitiveComponent* Target, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity,FVector& Force)
 {
+	if (!IsBodyValid(Target)) return;
+	
+	const int32& ShapeId = FindShapeId(Target);
+	
+	if (ShapeId == INDEX_NONE) return;
+	
+	const JPH::BodyID ID(ShapeId);
+	JPH::Vec3 OutLinearVelocity, OutAngularVelocity;
+	
+	BodyInterface->GetLinearAndAngularVelocity(ID, OutLinearVelocity, OutAngularVelocity);
+	AngularVelocity = JoltHelpers::ToUnrealVector3(OutAngularVelocity);
+	Velocity = JoltHelpers::ToUnrealVector3(OutLinearVelocity);
+	Transforms = JoltHelpers::ToUnrealTransform(BodyInterface->GetCenterOfMassTransform(ID));
+	
 	
 }
 
@@ -880,7 +901,7 @@ int32 UJoltPhysicsWorldSubsystem::LineTraceSingle(const FVector& Start, const FV
 	} 
 	
 	JPH::RayCastSettings	 Settings;
-	FVector					 dir = End - Start;
+	FVector					 dir = End/* - Start*/;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPosition(Start), JoltHelpers::ToJoltVector3(dir) };
 	FirstRayCastHitCollector Collector(*MainPhysicsSystem, ray);
 	
@@ -946,7 +967,7 @@ TArray<int32> UJoltPhysicsWorldSubsystem::LineTraceMulti(const FVector& Start, c
 
 	
 	JPH::RayCastSettings	 Settings;
-	FVector					 dir = End - Start;
+	FVector					 dir = End/* - Start*/;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPosition(Start), JoltHelpers::ToJoltVector3(dir) };
 	FRaycastCollector_AllHits Collector(*MainPhysicsSystem, ray);
 	
@@ -1052,7 +1073,7 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	
 	JPH::RMat44 FromTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, Start));
 	JPH::RMat44 ToTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, FinalEnd));
-	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End - Start);
+	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End/* - Start*/);
 	
 	JPH::RShapeCast ShapeCast
 	{ 
@@ -1165,7 +1186,7 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 	
 	JPH::RMat44 FromTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, Start));
 	JPH::RMat44 ToTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, FinalEnd));
-	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End - Start);
+	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End /*- Start*/);
 	
 	JPH::RShapeCast ShapeCast
 	{ 
@@ -1256,6 +1277,8 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FirstRayCastHitCollect
 	const FVector ImpactNormal = JoltHelpers::ToUnrealVector3(Result.mContactNormal);
 	const FVector From = JoltHelpers::ToUnrealPosition(Result.mRay.mOrigin, UE_WORLD_ORIGIN);
 	
+	if (!Result.mBody) return;
+	
 	const FJoltUserData* UserData =  reinterpret_cast<FJoltUserData*>(Result.mBody->GetUserData());
 	if (!UserData) return;
 	
@@ -1297,6 +1320,8 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FClosestShapeCastHitCo
 	const FVector HitLocation = JoltHelpers::ToUnrealPosition(Result.mContactPosition, UE_WORLD_ORIGIN);
 	const FVector ImpactNormal = JoltHelpers::ToUnrealNormal(Result.mContactNormal);
 	const FVector From = JoltHelpers::ToUnrealPosition(Result.mRay.mCenterOfMassStart.GetTranslation(), UE_WORLD_ORIGIN);
+	
+	if (!Result.mBody) return;
 	
 	const FJoltUserData* UserData =  reinterpret_cast<FJoltUserData*>(Result.mBody->GetUserData());
 	if (!UserData) return;
