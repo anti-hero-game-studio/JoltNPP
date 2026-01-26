@@ -56,7 +56,7 @@ void UJoltPhysicsFallingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	// We don't want velocity limits to take the falling velocity component into account, since it is handled 
 	//   separately by the terminal velocity of the environment.
 	const FVector StartVelocity = StartingSyncState->GetVelocity_WorldSpace_Quantized();
-	const FVector StartHorizontalVelocity =  FVector::VectorPlaneProject(StartVelocity, UpDirection);
+	const FVector StartHorizontalVelocity =  FVector::VectorPlaneProject(StartVelocity, UpDirection); // Removes the velocity in the Up direction
 
 	FJoltFreeMoveParams Params;
 	if (CharacterInputs)
@@ -83,7 +83,7 @@ void UJoltPhysicsFallingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	}
 	else
 	{
-		IntendedOrientation_WorldSpace = CharacterInputs->GetOrientationIntentDir_WorldSpace().ToOrientationRotator();
+		IntendedOrientation_WorldSpace = CharacterInputs->GetOrientationIntentDir_WorldSpace().ToOrientationRotator(); // TODO:@GreggoryAddison::Determinism || This needs to use a net quantized value.
 	}
 
 	IntendedOrientation_WorldSpace = UJoltMovementUtils::ApplyGravityToOrientationIntent(IntendedOrientation_WorldSpace, MoverComp->GetWorldToGravityTransform(), CommonLegacySettings->bShouldRemainVertical);
@@ -171,9 +171,6 @@ void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulatio
 	
 	UJoltMoverComponent* MoverComponent = GetMoverComponent();
 	const FJoltMoverTickStartData& StartState = Params.StartState;
-	const UPrimitiveComponent* UpdatedComponent = Cast<UPrimitiveComponent>(Params.MovingComps.UpdatedComponent.Get());
-	
-	if (!UpdatedComponent) return;
 	if (!MoverComponent) return;
 	
 	const UJoltMoverBlackboard* SimBlackboard = MoverComponent->GetSimBlackboard();
@@ -209,15 +206,18 @@ void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulatio
 
 	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
 	if (!Subsystem) return;
+
+	FRotator TargetRotation = UJoltMovementUtils::ApplyAngularVelocityToRotator(StartingSyncState->GetOrientation_WorldSpace(), ProposedMove.AngularVelocityDegrees, DeltaSeconds);
+	
 	
 	// The physics simulation applies Z-only gravity acceleration via physics volumes, so we need to account for it here 
-	const FVector TargetVel = ProposedMove.LinearVelocity - MoverComponent->GetGravityAcceleration() * FVector::UpVector;
+	const FVector TargetVel = ProposedMove.LinearVelocity - MoverComponent->GetGravityAcceleration() * FVector::UpVector * DeltaSeconds;
 	const FVector DeltaLinearVelocity = (TargetVel - StartingSyncState->GetVelocity_WorldSpace_Quantized()).GetClampedToMaxSize(TerminalVerticalSpeed) * DeltaSeconds;
 	const FVector DeltaAngularVelocity = (ProposedMove.AngularVelocityDegrees - StartingSyncState->GetAngularVelocityDegrees_WorldSpace_Quantized()) * DeltaSeconds;
 
 	OutputState.MovementEndState.RemainingMs = 0.0f;
 	OutputState.MovementEndState.NextModeName = Params.StartState.SyncState.MovementMode;
-	OutputSyncState.UpdateTargetVelocity(DeltaLinearVelocity, DeltaAngularVelocity);
+	OutputSyncState.UpdateTargetVelocity(ProposedMove.LinearVelocity, ProposedMove.AngularVelocityDegrees);
 }
 
 

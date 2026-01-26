@@ -9,7 +9,7 @@
 
 
 UCLASS(ClassGroup=(Jolt), meta=(BlueprintSpawnableComponent), PrioritizeCategories="Jolt Physics", 
-	HideCategories=(Mobility, VirtualTexture, Physics))
+	HideCategories=(Mobility, VirtualTexture, Physics, Shape))
 class JOLTBRIDGE_API UJoltCapsuleComponent : public UCapsuleComponent, public IJoltPrimitiveComponentInterface
 {
 	GENERATED_BODY()
@@ -18,6 +18,7 @@ public:
 	
 	UJoltCapsuleComponent(const FObjectInitializer& ObjectInitializer);
 	virtual void InitializeComponent() override;
+	virtual void PostInitProperties() override;
 
 	virtual void SetSimulatePhysics(bool bSimulate) override;
 	virtual bool IsSimulatingPhysics(FName BoneName = NAME_None) const override;
@@ -38,13 +39,45 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
-	virtual FJoltBodyOptions& GetShapeOptions() override {return ShapeOptions;};
-	virtual const FJoltBodyOptions& GetShapeOptions() const override { return ShapeOptions; };
+	virtual FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() override {return JoltPhysicsBodySettings;};
+	virtual const FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() const override { return JoltPhysicsBodySettings; };
 	virtual const FCollisionResponseContainer& GetDefaultResponseContainer() const override { return BodyInstance.GetResponseToChannels();}
 	
-	
+	virtual float GetGroundTraceDistance() const override;
+	virtual float GetShapeHeight() const override;
+	virtual float GetShapeWidth() const override;
+	virtual float GetShapeStepHeightRatio() const override {return StepHeightRatio;}
+
 protected:
 	
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Jolt Physics")
-	FJoltBodyOptions ShapeOptions;
+	FJoltPhysicsBodySettings JoltPhysicsBodySettings;
+	
+	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category="Shape Options")
+	bool bIsUsingGitAmendSolution = false;
+	
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Shape Options")
+	float ColliderHeight = 88.f;
+	
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Shape Options")
+	float ColliderRadius = 44.f;
+	
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Shape Options", meta=(ClampMin="0", ClampMax="1"))
+	float StepHeightRatio = 0.1f;
+	
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Shape Options")
+	FVector ColliderOffset = FVector::Zero();
+
+	
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+	void RecalculateCollider();
+	
+#endif
+	
+#if WITH_EDITORONLY_DATA
+	FVector NewRelativeLocation = FVector::Zero();
+#endif
+	
+	
 };

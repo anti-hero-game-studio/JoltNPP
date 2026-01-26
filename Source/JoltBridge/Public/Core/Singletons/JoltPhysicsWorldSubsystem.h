@@ -123,6 +123,9 @@ public:
 	void AddForce(AActor* Target, const FVector Force);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void SetGravityFactor(const UPrimitiveComponent* Target, const float GravityFactor);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void SetAngularVelocity(AActor* Target, const FVector AngularVelocity);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
@@ -260,7 +263,7 @@ private:
 	void DrawDebugLines() const;
 #endif
 
-	typedef const std::function<void(const JPH::Shape*, const FTransform&, const FJoltBodyOptions& /*ShapeOptions*/)>& PhysicsGeometryCallback;
+	typedef const std::function<void(const JPH::Shape*, const FTransform&, const FJoltPhysicsBodySettings& /*ShapeOptions*/)>& PhysicsGeometryCallback;
 	
 		
 #pragma region JOLTBRIDGE SHAPE CREATION
@@ -274,15 +277,15 @@ public:
 
 	const JPH::ConvexHullShape* GetConvexHullCollisionShape(UBodySetup* BodySetup, int ConvexIndex, const FVector& Scale, const JoltPhysicsMaterial* material = nullptr);
 
-	JPH::Body* AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::Body* AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData);
 
-	JPH::Body* AddRigidBodyCollider(USkeletalMeshComponent* Skel, const FTransform& localTransform, const JPH::Shape* CollisionShape, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::Body* AddRigidBodyCollider(USkeletalMeshComponent* Skel, const FTransform& localTransform, const JPH::Shape* CollisionShape, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData);
 	
-	JPH::Body* AddStaticCollider(const JPH::Shape* Shape, const FTransform& Transform, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::Body* AddStaticCollider(const JPH::Shape* Shape, const FTransform& Transform, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData);
 	
-	JPH::Body* AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::Body* AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData);
 
-	JPH::BodyCreationSettings MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T, const FJoltBodyOptions& Options, const FJoltUserData* UserData);
+	JPH::BodyCreationSettings MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData);
 	
 private:
 	
@@ -352,7 +355,7 @@ public:
 	JPH::Body* GetRigidBody(const UPrimitiveComponent* Target) const;
 	const FJoltUserData* GetUserData(const UPrimitiveComponent* Target) const;
 	static const FJoltUserData* GetUserData(const uint64& UserDataPtr);
-	
+	const UJoltSettings* GetJoltSettings() const {return JoltSettings;};
 	
 	
 	

@@ -38,6 +38,7 @@
 #endif
 
 #include "Components/CapsuleComponent.h"
+#include "Core/Interfaces/JoltPrimitiveComponentInterface.h"
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
 #include "DefaultMovementSet/Modes/Physics/JoltPhysicsMovementMode.h"
 
@@ -118,7 +119,7 @@ void UJoltMoverComponent::InitializeComponent()
 		RollbackBlackboard->CreateEntry<FJoltMovementModeChangeRecord>(CommonBlackboard::LastModeChangeRecord, ModeChangeRecordSettings);
 
 
-		FindDefaultUpdatedComponent();
+		FindDefaultComponents();
 
 		// Set up FSM and initial movement states
 		ModeFSM = NewObject<UJoltMovementModeStateMachine>(this, TEXT("JoltMoverStateMachine"), RF_Transient);
@@ -217,7 +218,7 @@ void UJoltMoverComponent::OnRegister()
 
 	Super::OnRegister();
 
-	FindDefaultUpdatedComponent();
+	FindDefaultComponents();
 }
 
 
@@ -310,7 +311,7 @@ void UJoltMoverComponent::BeginPlay()
 	
 	
 	
-	FindDefaultUpdatedComponent();
+	FindDefaultComponents();
 	ensureMsgf(UpdatedComponent != nullptr, TEXT("No root component found on %s. Simulation initialization will most likely fail."), *GetPathNameSafe(GetOwner()));
 
 	WorldToGravityTransform = FQuat::FindBetweenNormals(FVector::UpVector, GetUpDirection());
@@ -399,10 +400,6 @@ void UJoltMoverComponent::BeginPlay()
 
 void UJoltMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
-	{
-		Subsystem->OnModifyContacts.Remove(OnModifyContactsDelegateHandle);
-	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -630,6 +627,7 @@ void UJoltMoverComponent::InitializeSimulationState(FJoltMoverSyncState* OutSync
 
 void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, const FJoltMoverTickStartData& SimInput, OUT FJoltMoverTickEndData& SimOutput)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::SimulationTick);
 	// Send mover info to the Chaos Visual Debugger (this will do nothing if CVD is not recording, or the mover info data channel not enabled)
 	UE::JoltMoverUtils::FJoltMoverCVDRuntimeTrace::TraceJoltMoverData(this, &SimInput.InputCmd, &SimInput.SyncState);
 	
@@ -1097,7 +1095,9 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 		const FVector WorldLocation = MoverState->GetLocation_WorldSpace();
 		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace();
 		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
-
+		
+		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+		
 		// Apply the desired transform to the scene component
 
 		// If we can, then we can utilize grouped movement updates to reduce the number of calls to SendPhysicsTransform
@@ -1110,13 +1110,12 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 				EScopedUpdate::DeferredGroupUpdates,
 				/*bRequireOverlapsEventFlagToQueueOverlaps*/ true);
 
-			FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+			
 			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::None);
 			UpdatedComponent->ComponentVelocity = WorldVelocity;
 		}
 		else
 		{
-			FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
 			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::None);
 			UpdatedComponent->ComponentVelocity = WorldVelocity;
 		}
@@ -1165,6 +1164,30 @@ void UJoltMoverComponent::HandleImpact(FJoltMoverOnImpactParams& ImpactParams)
 	}
 	
 	OnHandleImpact(ImpactParams);
+}
+
+void UJoltMoverComponent::FindDefaultComponents()
+{
+	FindDefaultUpdatedComponent();
+	
+	if (!IsValid(JoltPhysicsComponent))
+	{
+		const AActor* MyActor = GetOwner();
+		const UWorld* MyWorld = GetWorld();
+
+		if (MyActor && MyWorld && MyWorld->IsGameWorld())
+		{
+			const int32 NumOfChildren = MyActor->GetRootComponent()->GetNumChildrenComponents();
+			for (int i = 0; i < NumOfChildren; ++i)
+			{
+				USceneComponent* ChildComponent = MyActor->GetRootComponent()->GetChildComponent(i);
+				if (!ChildComponent->Implements<UJoltPrimitiveComponentInterface>()) continue;
+				if (!ChildComponent->IsA(UPrimitiveComponent::StaticClass())) continue;
+				SetJoltPhysicsComponent(Cast<UPrimitiveComponent>(ChildComponent));
+				break;
+			}
+		}
+	}
 }
 
 void UJoltMoverComponent::OnHandleImpact(const FJoltMoverOnImpactParams& ImpactParams)
@@ -2189,6 +2212,8 @@ FTransform UJoltMoverComponent::GetUpdatedComponentTransform() const
 
 void UJoltMoverComponent::SetUpdatedComponent(USceneComponent* NewUpdatedComponent)
 {
+	//TODO:@GreggoryAddison::CodeCleanliness || We don't need to bind to the physics delegates in chaos if we are not registering for chaos collisions.
+	
 	// Remove delegates from old component
 	if (UpdatedComponent)
 	{
@@ -2233,10 +2258,21 @@ void UJoltMoverComponent::SetUpdatedComponent(USceneComponent* NewUpdatedCompone
 	UpdateTickRegistration();
 }
 
+void UJoltMoverComponent::SetJoltPhysicsComponent(UPrimitiveComponent* NewPhysicsComponent)
+{
+	//TODO:@GreggoryAddison::CodeCompletion || Need to unbind then rebind any delegates that we want to manage locally. A good one is on component hit so we can check for the ground without tracing. Meaning while falling I don't need to trace down I can just wait on the delegate signal
+	JoltPhysicsComponent = NewPhysicsComponent;
+}
+
 
 USceneComponent* UJoltMoverComponent::GetUpdatedComponent() const
 {
 	return UpdatedComponent.Get();
+}
+
+UPrimitiveComponent* UJoltMoverComponent::GetJoltPhysicsBodyComponent() const
+{
+	return JoltPhysicsComponent.Get();
 }
 
 USceneComponent* UJoltMoverComponent::GetPrimaryVisualComponent() const
@@ -2883,35 +2919,9 @@ void UJoltMoverComponent::CheckForExternalMovement(const FJoltMoverTickStartData
 
 #pragma region JOLT PHYSICS
 
-TArray<UPrimitiveComponent*> UJoltMoverComponent::GetSecondaryCollisionShapes_Implementation() const
-{
-	return TArray<UPrimitiveComponent*>();
-}
 
-void UJoltMoverComponent::InitializeWithJolt()
-{
-	CreateShapesForRootComponent();
-	
-	if (bShouldCreateSecondaryShapes)
-	{
-		CreateSecondaryShapes();
-	}
-}
 
-void UJoltMoverComponent::CreateShapesForRootComponent()
-{
-	//TODO:@GreggoryAddison::CodeCompletion || Try and create the root shape for the character
-}
 
-void UJoltMoverComponent::CreateSecondaryShapes()
-{
-	const TArray<UPrimitiveComponent*> Comps(GetSecondaryCollisionShapes());
-	for (const UPrimitiveComponent* C : Comps)
-	{
-		//TODO:@GreggoryAddison::CodeCompletion || Try and create the root shape for the character	
-	}
-	
-}
 
 #pragma endregion 
 

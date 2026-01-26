@@ -448,6 +448,9 @@ public:	// Queries
 	// Sets which component we're using as the root of our movement
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	JOLTMOVER_API void SetUpdatedComponent(USceneComponent* NewUpdatedComponent);
+	
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API void SetJoltPhysicsComponent(UPrimitiveComponent* NewPhysicsComponent);
 
 	// Access the root component of the actor that our Mover simulation is moving
 	UFUNCTION(BlueprintCallable, Category = Mover)
@@ -460,6 +463,10 @@ public:	// Queries
 		static_assert(TPointerIsConvertibleFromTo<T, const USceneComponent>::Value, "'T' template parameter to GetUpdatedComponent must be derived from USceneComponent");
 		return Cast<T>(GetUpdatedComponent());
 	}
+	
+	// Access the root component of the actor that our Mover simulation is moving
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API UPrimitiveComponent* GetJoltPhysicsBodyComponent() const;
 
 	// Access the primary visual component of the actor
 	UFUNCTION(BlueprintCallable, Category = Mover)
@@ -705,6 +712,7 @@ public:
 	JOLTMOVER_API void HandleImpact(FJoltMoverOnImpactParams& ImpactParams);
 
 protected:
+	JOLTMOVER_API void FindDefaultComponents();
 	JOLTMOVER_API void FindDefaultUpdatedComponent();
 	JOLTMOVER_API void UpdateTickRegistration();
 
@@ -757,6 +765,11 @@ protected:
 	/** UpdatedComponent, cast as a UPrimitiveComponent. May be invalid if UpdatedComponent was null or not a UPrimitiveComponent. */
 	UPROPERTY(Transient)
 	TObjectPtr<UPrimitiveComponent> UpdatedCompAsPrimitive = nullptr;
+	
+	/** JoltPhysicsComponent, must be a UPrimitiveComponent. Should not be invalid. 
+	 * It is fetched automatically on BeginPlay where the first jolt primitive type in the hierarchy is used*/
+	UPROPERTY(Transient)
+	TObjectPtr<UPrimitiveComponent> JoltPhysicsComponent = nullptr;
 
 	/** The main visual component associated with this Mover actor, typically a mesh and typically parented to the UpdatedComponent. */
 	UPROPERTY(Transient)
@@ -934,43 +947,17 @@ protected:
 #pragma region JOLT PHYSICS
 protected:
 	
-	/* If the owner actor of this component has extra collision shapes allow for them to be created in the physics world.
-	 * This will not create the rigid body for them just the shape.
-	 */
-	UPROPERTY(EditDefaultsOnly, Category="Jolt Mover|Physics Settings")
-	uint8 bShouldCreateSecondaryShapes : 1 = 0;
 	
-	UPROPERTY(EditDefaultsOnly, Category="Jolt Mover|Physics Settings")
-	uint8 bShouldTraceAgainstBackFaces : 1 = 0;
-	
-	/* Set to indicate that extra effort should be made to try to remove ghost contacts (collisions with internal edges of a mesh). 
-	 * This is more expensive but makes bodies move smoother over a mesh with convex edges.
-	*/
-	UPROPERTY(EditDefaultsOnly, Category="Jolt Mover|Physics Settings")
-	uint8 bUseEnhancedEdgeDetection : 1 = 0;
-	
-	UPROPERTY(EditDefaultsOnly, Category="Jolt Mover|Physics Settings|Mass")
-	float DefaultMass = 70.0f;
-	
-	/* Populate an array with the shapes you want to be created in the jolt physics world 
-	 */
-	UFUNCTION(BlueprintNativeEvent, Category="Jolt Mover|Collision Shapes")
-	TArray<UPrimitiveComponent*> GetSecondaryCollisionShapes() const;
+
 	
 	
-	// The different stances for the character
-	
-	virtual void InitializeWithJolt();
-	virtual void CreateShapesForRootComponent();
-	virtual void CreateSecondaryShapes();
+	virtual void InitializeWithJolt() {};
 	
 	virtual void JoltPreSimulationTick(const FJoltMoverTimeStep& InTimeStep, const FJoltMoverTickStartData& SimInput, FJoltMoverTickEndData& SimOutput) {};
 	virtual void FinalizeStateFromJoltSimulation(FJoltMoverTickEndData& SimOutput) {};
 	
 public:
 	virtual void SendFinalVelocityToJolt(const FJoltMoverTimeStep& InTimeStep, const FVector& LinearVelocity, const FVector& AngularVelocity) {}
-	
-private:
-	FDelegateHandle OnModifyContactsDelegateHandle;
+
 #pragma endregion
 };

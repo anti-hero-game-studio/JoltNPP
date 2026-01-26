@@ -97,7 +97,8 @@ void UJoltPhysicsWorldSubsystem::InitPhysicsSystem(
 	JoltDebugRendererImpl = new FJoltDebugRenderer(GetWorld());
 #endif
 	// Jolt uses Y axis as the up direction, and unreal uses the Z axis. So, set gravity for Y
-	MainPhysicsSystem->SetGravity(JPH::Vec3Arg(0.0f, -9.8f, 0.0f));
+	
+	MainPhysicsSystem->SetGravity(JoltHelpers::ToJoltVector3(JoltSettings->WorldGravityAcceleration)); 
 	MainPhysicsSystem->Init(
 		cMaxBodies,
 		cNumBodyMutexes,
@@ -155,7 +156,7 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 	FUnrealShapeDescriptor Descriptor = GlobalShapeDescriptorDataCache.Contains(Target) ? GlobalShapeDescriptorDataCache[Target] : FUnrealShapeDescriptor();
 	Descriptor.ShapeOwner = Target;
 	
-	ExtractPhysicsGeometry(Target,[Target, this, &Descriptor](const JPH::Shape* Shape, const FTransform& RelTransform, const FJoltBodyOptions& Options)
+	ExtractPhysicsGeometry(Target,[Target, this, &Descriptor](const JPH::Shape* Shape, const FTransform& RelTransform, const FJoltPhysicsBodySettings& Options)
 	{
 		// Every sub-collider in the Actor is passed to this callback function
 		// We're baking this in world space, so apply Actor transform to relative
@@ -597,7 +598,7 @@ const FJoltUserData* UJoltPhysicsWorldSubsystem::GetUserData(const uint64& UserD
 	return reinterpret_cast<const FJoltUserData*>(UserDataPtr);
 }
 
-JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape,  const FJoltBodyOptions& Options, const FJoltUserData* UserData)
+JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(AActor* Actor, const FTransform& FinalTransform, const JPH::Shape* Shape,  const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData)
 {
 	JPH::BodyCreationSettings shapeSettings = MakeBodyCreationSettings(Shape, FinalTransform, Options, UserData);
 
@@ -606,12 +607,12 @@ JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(AActor* Actor, const
 	return AddBodyToSimulation(bodyID, shapeSettings, Options, UserData);
 }
 
-JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(USkeletalMeshComponent* Skel, const FTransform& PhysicsAssetTransform, const JPH::Shape* CollisionShape, const FJoltBodyOptions& Options, const FJoltUserData* UserData)
+JPH::Body* UJoltPhysicsWorldSubsystem::AddRigidBodyCollider(USkeletalMeshComponent* Skel, const FTransform& PhysicsAssetTransform, const JPH::Shape* CollisionShape, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData)
 {
 	return nullptr;
 }
 
-JPH::Body* UJoltPhysicsWorldSubsystem::AddStaticCollider(const JPH::Shape* Shape, const FTransform& Transform, const FJoltBodyOptions& Options, const FJoltUserData* UserData)
+JPH::Body* UJoltPhysicsWorldSubsystem::AddStaticCollider(const JPH::Shape* Shape, const FTransform& Transform, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData)
 {
 	check(Shape != nullptr);
 	JPH::BodyCreationSettings shapeSettings = MakeBodyCreationSettings(Shape, Transform, Options, UserData);
@@ -622,7 +623,7 @@ JPH::Body* UJoltPhysicsWorldSubsystem::AddStaticCollider(const JPH::Shape* Shape
 	return AddBodyToSimulation(bodyID, shapeSettings, Options, UserData);
 }
 
-JPH::Body* UJoltPhysicsWorldSubsystem::AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltBodyOptions& Options, const FJoltUserData* UserData)
+JPH::Body* UJoltPhysicsWorldSubsystem::AddBodyToSimulation(const JPH::BodyID* BodyID, const JPH::BodyCreationSettings& ShapeSettings, const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData)
 {
 	check(BodyInterface != nullptr);
 	check(BodyID != nullptr);
@@ -641,7 +642,7 @@ JPH::Body* UJoltPhysicsWorldSubsystem::AddBodyToSimulation(const JPH::BodyID* Bo
 	return createdBody;
 }
 
-JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T,const FJoltBodyOptions& Options, const FJoltUserData* UserData)
+JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(const JPH::Shape* Shape, const FTransform& T,const FJoltPhysicsBodySettings& Options, const FJoltUserData* UserData)
 {
 	check(Shape != nullptr);
 	
@@ -887,12 +888,12 @@ void UJoltPhysicsWorldSubsystem::StepPhysics(float FixedTimeStep)
 
 	if (BroadcastPendingAddedContactEvents())
 	{
-		UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Added Contact Events"))
+		//UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Added Contact Events"))
 	}
 	
 	if (BroadcastPendingRemovedContactEvents())
 	{
-		UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Removed Contact Events"))
+		//UE_LOG(LogJoltBridge, Log, TEXT("Finished Broadcasting Newly Removed Contact Events"))
 	}
 }
 
@@ -916,6 +917,16 @@ void UJoltPhysicsWorldSubsystem::AddForce(AActor* Target, const FVector Force)
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
 	BodyInterface->AddForce(JoltBodyId, JoltHelpers::ToJoltVector3(Force));
+}
+
+void UJoltPhysicsWorldSubsystem::SetGravityFactor(const UPrimitiveComponent* Target, const float GravityFactor)
+{
+	const int32 ShapeId = FindShapeId(Target);
+	if (ShapeId == INDEX_NONE) return;
+	
+	JPH::BodyID ID(ShapeId);
+	
+	BodyInterface->SetGravityFactor(ID, GravityFactor);
 }
 
 void UJoltPhysicsWorldSubsystem::SetAngularVelocity(AActor* Target, const FVector AngularVelocity)
@@ -1673,7 +1684,7 @@ void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(const AActor* Actor, Phy
 		IJoltPrimitiveComponentInterface* I = Cast<IJoltPrimitiveComponentInterface>(Comp);
 		if (!I) continue;
 
-		const FJoltBodyOptions& ShapeOptions = I->GetShapeOptions();
+		const FJoltPhysicsBodySettings& ShapeOptions = I->GetJoltPhysicsBodySettings();
 		if (!ShapeOptions.bGenerateCollisionEventsInJolt && !ShapeOptions.bGenerateOverlapEventsInJolt)
 		{
 			continue;
@@ -1765,7 +1776,7 @@ void UJoltPhysicsWorldSubsystem::ExtractComplexPhysicsGeometry(const FTransform&
 		UE_LOG(LogJoltBridge, Error, TEXT("Failed to create Mesh. Error: %s"), *FString(res.GetError().c_str()));
 	}
 
-	Callback(res.Get(), XformSoFar, I->GetShapeOptions());
+	Callback(res.Get(), XformSoFar, I->GetJoltPhysicsBodySettings());
 }
 
 void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(UStaticMeshComponent* SMC, const FTransform& InvActorXform, PhysicsGeometryCallback CB, FUnrealShapeDescriptor& ShapeDescriptor)
@@ -1864,7 +1875,7 @@ void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(UPrimitiveComponent* Pri
 		FTransform ShapeXform(ueBox.Rotation, ueBox.Center);
 		// Shape transform adds to any relative transform already here
 		FTransform XForm = ShapeXform * XformSoFar;
-		CB(JoltShape, XForm, I->GetShapeOptions());
+		CB(JoltShape, XForm, I->GetJoltPhysicsBodySettings());
 	}
 	for (const FKSphereElem& ueSphere : BodySetup->AggGeom.SphereElems)
 	{
@@ -1884,7 +1895,7 @@ void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(UPrimitiveComponent* Pri
 		FTransform ShapeXform(FRotator::ZeroRotator, ueSphere.Center);
 		// Shape transform adds to any relative transform already here
 		FTransform XForm = ShapeXform * XformSoFar;
-		CB(JoltShape, XForm, I->GetShapeOptions());
+		CB(JoltShape, XForm, I->GetJoltPhysicsBodySettings());
 	}
 	// Sphyl == Capsule (??)
 	for (const FKSphylElem& Capsule : BodySetup->AggGeom.SphylElems)
@@ -1906,7 +1917,7 @@ void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(UPrimitiveComponent* Pri
 		FTransform XForm = ShapeXform * XformSoFar;
 		ShapeDescriptor.Shapes.Last().ShapeRadius = Capsule.Radius * Scale.X;
 		ShapeDescriptor.Shapes.Last().ShapeHeight = Capsule.Length * Scale.Z;
-		CB(JoltShape, XForm, I->GetShapeOptions());
+		CB(JoltShape, XForm, I->GetJoltPhysicsBodySettings());
 	}
 	
 	for (const FKTaperedCapsuleElem& Capsule : BodySetup->AggGeom.TaperedCapsuleElems)
@@ -1948,14 +1959,14 @@ void UJoltPhysicsWorldSubsystem::ExtractPhysicsGeometry(UPrimitiveComponent* Pri
 		}
 
 		// TODO@GreggoryAddison::CodeCompletion || Use the bounding box??
-		CB(JoltShape, XformSoFar, I->GetShapeOptions());
+		CB(JoltShape, XformSoFar, I->GetJoltPhysicsBodySettings());
 	}
 
 	if (compoundShapeSettings)
 	{
 		// TODO@GreggoryAddison::CodeCompletion || Use the bounding box??
 		JoltShape = compoundShapeSettings->Create().Get();
-		CB(JoltShape, XformSoFar, I->GetShapeOptions());
+		CB(JoltShape, XformSoFar, I->GetJoltPhysicsBodySettings());
 		delete compoundShapeSettings;
 	}
 	

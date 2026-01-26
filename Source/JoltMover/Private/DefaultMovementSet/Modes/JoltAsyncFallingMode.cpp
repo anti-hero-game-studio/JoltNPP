@@ -327,7 +327,7 @@ void UJoltAsyncFallingMode::ProcessLanded(const FJoltFloorCheckResult& FloorResu
 	}
 }
 
-void UJoltAsyncFallingMode::CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector FinalLocation, const FRotator FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const
+void UJoltAsyncFallingMode::CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector& FinalLocation, const FRotator& FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const
 {
 	UJoltMoverBlackboard* SimBlackboard = GetMoverComponent()->GetSimBlackboard_Mutable();
 

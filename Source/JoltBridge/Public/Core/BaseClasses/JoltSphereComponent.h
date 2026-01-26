@@ -40,13 +40,13 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,FActorComponentTickFunction* ThisTickFunction) override;
 	
-	virtual FJoltBodyOptions& GetShapeOptions() override {return ShapeOptions;};
-	virtual const FJoltBodyOptions& GetShapeOptions() const override { return ShapeOptions; };
+	virtual FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() override {return ShapeOptions;};
+	virtual const FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() const override { return ShapeOptions; };
 	virtual const FCollisionResponseContainer& GetDefaultResponseContainer() const override { return BodyInstance.GetResponseToChannels();}
 	
 	
 protected:
 	
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Jolt Physics")
-	FJoltBodyOptions ShapeOptions;
+	FJoltPhysicsBodySettings ShapeOptions;
 };

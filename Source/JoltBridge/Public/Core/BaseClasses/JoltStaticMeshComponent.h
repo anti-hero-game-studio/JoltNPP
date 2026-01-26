@@ -32,8 +32,8 @@ public:
 	virtual const FCollisionResponseContainer& GetCollisionResponseToChannels() const override;
 	
 	
-	virtual FJoltBodyOptions& GetShapeOptions() override {return ShapeOptions;};
-	virtual const FJoltBodyOptions& GetShapeOptions() const override { return ShapeOptions; };
+	virtual FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() override {return ShapeOptions;};
+	virtual const FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() const override { return ShapeOptions; };
 	virtual const FCollisionResponseContainer& GetDefaultResponseContainer() const override { return BodyInstance.GetResponseToChannels();}
 	
 	
@@ -42,5 +42,5 @@ protected:
 	virtual bool UpdateOverlapsImpl(const TOverlapArrayView* PendingOverlaps = nullptr, bool bDoNotifies = true, const TOverlapArrayView* OverlapsAtEndLocation = nullptr) override;
 	
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Jolt Physics")
-	FJoltBodyOptions ShapeOptions;
+	FJoltPhysicsBodySettings ShapeOptions;
 };

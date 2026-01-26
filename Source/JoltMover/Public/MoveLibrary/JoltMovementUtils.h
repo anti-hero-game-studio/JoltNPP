@@ -329,6 +329,24 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	static UE_API bool TestEncroachmentAndAdjust(const UJoltMoverComponent* MoverComp, FVector TestLocation, FRotator TestRotation, FVector& OutProposedAdjustment);
+	
+	
+	/**
+	  * @param OriginalVector Vector you need aligned.
+	  * @param AlignToVector Vector you need to align to.
+	  * @return Returns the vector aligned to the vector passed in
+	  */
+	UFUNCTION(BlueprintCallable, Category=Mover, meta=(DisplayName="Get Aligned Vector"))
+	static UE_API FVector GetAlignedVector(const FVector OriginalVector, const FVector AlignToVector);
+	
+	/**
+	  * @param OriginalVector Vector you need aligned.
+	  * @param AlignToVector Vector you need to align to.
+	  * @return Returns the vector without the aligned vector passed in
+	  */
+	UFUNCTION(BlueprintCallable, Category=Mover, meta=(DisplayName="Remove Aligned Vector"))
+	static UE_API FVector RemoveAlignedVector(const FVector OriginalVector, const FVector AlignToVector);
+	
 
 
 	// Internal functions - not meant to be called outside of this library

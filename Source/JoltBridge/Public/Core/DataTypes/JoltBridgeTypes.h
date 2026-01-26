@@ -176,17 +176,17 @@ enum class EGravityOverrideType : uint8
 	VECTOR_CURVE = 2 UMETA(Hidden), // TODO:@GreggoryAddison
 	STATIC_FLOAT = 3,
 	FLOAT_CURVE = 4,
-	FROM_MOVER = 4,
+	FROM_MOVER = 5,
 };
 
 
 
 USTRUCT(BlueprintType)
-struct FJoltBodyOptions
+struct FJoltPhysicsBodySettings
 {
 	GENERATED_BODY()
 	
-	FJoltBodyOptions()
+	FJoltPhysicsBodySettings()
 	{
 		
 	}

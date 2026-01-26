@@ -10,6 +10,7 @@
 #include "Misc/DataValidation.h"
 #endif
 
+#include "Core/Interfaces/JoltPrimitiveComponentInterface.h"
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
 #include "DefaultMovementSet/Settings/JoltCommonLegacyMovementSettings.h"
 
@@ -150,45 +151,67 @@ UJoltNullMovementMode::UJoltNullMovementMode(const FObjectInitializer& ObjectIni
 {
 }
 
-void UJoltBaseMovementMode::FloorCheck(const FVector& StartingLocation, const FVector& ProposedLinearVelocity, const float& DeltaTime, FJoltFloorCheckResult& Result) const
+FVector UJoltBaseMovementMode::FloorCheck(const FVector& StartingLocation, const FVector& ProposedLinearVelocity, const float& DeltaTime, FJoltFloorCheckResult& Result) const
 {
 	Result.bBlockingHit = false;
 	Result.bWalkableFloor = false;
 	const UJoltMoverComponent* M = GetMoverComponent<UJoltMoverComponent>();
-	if (!M) return;
+	if (!M) return ProposedLinearVelocity;
+	
+	UPrimitiveComponent* JoltBody = M->GetUpdatedComponent<UPrimitiveComponent>();
+	if (!JoltBody) return ProposedLinearVelocity;
 	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
-	if (!Subsystem) return;
+	if (!Subsystem) return ProposedLinearVelocity;
 	const UJoltCommonLegacyMovementSettings* SharedSettingsPtr = M->FindSharedSettings<UJoltCommonLegacyMovementSettings>();
-	if (!SharedSettingsPtr) return;
-	
-	const FVector& UpDir = M->GetUpDirection();
-	const FVector& Dir = -UpDir;
-	const FVector& End = StartingLocation + (Dir * FloorCheckDistance);
-	
-	int32 HitBodyId;
-	const FHitResult Hit = Subsystem->LineTraceSingleByChannel(StartingLocation, End, ECC_WorldStatic, {M->GetOwner()}, HitBodyId);
-	const bool bWalkable = UJoltFloorQueryUtils::IsHitSurfaceWalkable(Hit, UpDir, SharedSettingsPtr->MaxWalkSlopeCosine);
-	Result.bBlockingHit = Hit.bBlockingHit;
-	Result.bWalkableFloor = bWalkable;
-	Result.FloorDist = UpDir.Dot(StartingLocation - Hit.ImpactPoint);
-	Result.HitResult = Hit;
-	
-	// Update the ground distance based on the slope. If you are on a slope the query might hit on an edge
-	// rather than directly under the capsule. Also move back to the start location
-	const float DP = Hit.ImpactNormal.Dot(UpDir);
-	if (DP > UE_SMALL_NUMBER)
-	{
-		const JPH::Body* Rb = Subsystem->GetRigidBody(M->GetUpdatedComponent<UPrimitiveComponent>());
-		if (!Rb) return;
+	if (!SharedSettingsPtr) return ProposedLinearVelocity;
 
-		uint64 P = Rb->GetUserData();
+	if (const IJoltPrimitiveComponentInterface* I = Cast<IJoltPrimitiveComponentInterface>(JoltBody))
+	{
+		const FVector& UpDir = M->GetUpDirection();
+		const FVector& Dir = -UpDir;
+		const FVector& End = StartingLocation + (Dir * I->GetGroundTraceDistance());
+	
+		int32 HitBodyId;
+		const FHitResult Hit = Subsystem->SweepSphereSingleByChannel(I->GetShapeWidth(), StartingLocation, End, ECC_WorldStatic, {M->GetOwner()}, HitBodyId);
+		const bool bWalkable = UJoltFloorQueryUtils::IsHitSurfaceWalkable(Hit, UpDir, SharedSettingsPtr->MaxWalkSlopeCosine);
+		Result.bBlockingHit = Hit.bBlockingHit;
+		Result.bWalkableFloor = bWalkable;
+		Result.FloorDist = UpDir.Dot(StartingLocation - Hit.ImpactPoint);
+		Result.HitResult = Hit;
+	
+		// Update the ground distance based on the slope. If you are on a slope the query might hit on an edge
+		// rather than directly under the capsule. Also move back to the start location
+
+		if (bWalkable)
+		{
+			const float ShapeHeight = I->GetShapeHeight();
+			const float Distance = Hit.Distance;
+			const float UpperLimit = ShapeHeight * (1.f - I->GetShapeStepHeightRatio()) * 0.5f;
+			const float Middle = ShapeHeight + UpperLimit * I->GetShapeStepHeightRatio();
+			const float DistanceToGo = Middle - Distance;
+			
+			return (UpDir * (DistanceToGo * DeltaTime)) + ProposedLinearVelocity;
+			
+		} 
+		
+		
+		/*const float DP = Hit.ImpactNormal.Dot(UpDir);
+		if (DP > UE_SMALL_NUMBER)
+		{
+			const JPH::Body* Rb = Subsystem->GetRigidBody(M->GetUpdatedComponent<UPrimitiveComponent>());
+			if (!Rb) return;
+
+			uint64 P = Rb->GetUserData();
 				
-		const FJoltUserData* D = reinterpret_cast<const FJoltUserData*>(P);
-		if (!D) return;
+			const FJoltUserData* D = reinterpret_cast<const FJoltUserData*>(P);
+			if (!D) return;
 				
-		Result.FloorDist += 2.0f *  D->ShapeRadius * (1.0f - DP) / DP
-			+ FVector::VectorPlaneProject(ProposedLinearVelocity* DeltaTime, Hit.ImpactNormal).Dot(UpDir);
+			Result.FloorDist += 2.0f *  D->ShapeRadius * (1.0f - DP) / DP
+				+ FVector::VectorPlaneProject(ProposedLinearVelocity* DeltaTime, Hit.ImpactNormal).Dot(UpDir);
+		}*/
 	}
+	
+	return ProposedLinearVelocity;
 	
 	
 	

@@ -850,6 +850,18 @@ bool UJoltMovementUtils::TestEncroachmentAndAdjust(const UJoltMoverComponent* Mo
 	return bFoundEncroacher;
 }
 
+FVector UJoltMovementUtils::GetAlignedVector(const FVector OriginalVector, const FVector AlignToVector)
+{
+	const FVector A = AlignToVector.GetSafeNormal();
+	return A * OriginalVector.Dot(A);
+}
+
+FVector UJoltMovementUtils::RemoveAlignedVector(const FVector OriginalVector, const FVector AlignToVector)
+{
+	const FVector A = AlignToVector.GetSafeNormal();
+	return OriginalVector - A * OriginalVector.Dot(A);
+}
+
 
 bool UJoltMovementUtils::TryMoveUpdatedComponent_Internal(const FJoltMovingComponentSet& MovingComps, const FVector& Delta, const FQuat& NewRotation, bool bSweep, EMoveComponentFlags MoveComponentFlags, FHitResult* OutHit, ETeleportType Teleport)
 {

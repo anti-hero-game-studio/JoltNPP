@@ -2,6 +2,7 @@
 
 #include "DefaultMovementSet/CharacterJoltMoverComponent.h"
 
+#include "JoltBridgeCoreSettings.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -319,10 +320,17 @@ void UCharacterJoltMoverComponent::InitializeJoltCharacter()
 		return;
 	}
 	
-	if (UJoltPhysicsWorldSubsystem* B = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
 		// TODO:@GreggoryAddison::CodeCompletion || Add support for kinematic mover
-		B->RegisterJoltRigidBody(GetOwner());
+		S->RegisterJoltRigidBody(GetOwner());
+
+		if (UpdatedCompAsPrimitive)
+		{
+			const float GravityFactor = FMath::Abs(S->GetJoltSettings()->WorldGravityAcceleration.Length() / GetGravityAcceleration().Length());
+			S->SetGravityFactor(UpdatedCompAsPrimitive, GravityFactor);
+		}
+		
 	}
 	
 }

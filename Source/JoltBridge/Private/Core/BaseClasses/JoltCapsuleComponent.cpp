@@ -10,15 +10,21 @@
 UJoltCapsuleComponent::UJoltCapsuleComponent(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
 {
-	
-	SetGenerateOverlapEvents(ShapeOptions.bGenerateOverlapEventsInChaos);
+	CapsuleHalfHeight = ColliderHeight;
+	CapsuleRadius = ColliderRadius;
+	SetGenerateOverlapEvents(JoltPhysicsBodySettings.bGenerateOverlapEventsInChaos);
 }
 
 
 void UJoltCapsuleComponent::InitializeComponent()
 {
 	Super::InitializeComponent();
-	SetGenerateOverlapEvents(ShapeOptions.bGenerateOverlapEventsInChaos);
+	SetGenerateOverlapEvents(JoltPhysicsBodySettings.bGenerateOverlapEventsInChaos);
+}
+
+void UJoltCapsuleComponent::PostInitProperties()
+{
+	Super::PostInitProperties();
 }
 
 void UJoltCapsuleComponent::SetSimulatePhysics(const bool bSimulate)
@@ -137,7 +143,7 @@ void UJoltCapsuleComponent::BeginPlay()
 bool UJoltCapsuleComponent::UpdateOverlapsImpl(const TOverlapArrayView* PendingOverlaps, bool bDoNotifies,
 	const TOverlapArrayView* OverlapsAtEndLocation)
 {
-	if (!ShapeOptions.bGenerateOverlapEventsInChaos) return true;
+	if (!JoltPhysicsBodySettings.bGenerateOverlapEventsInChaos) return true;
 	
 	return Super::UpdateOverlapsImpl(PendingOverlaps, bDoNotifies, OverlapsAtEndLocation);
 }
@@ -151,3 +157,75 @@ void UJoltCapsuleComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	// ...
 }
 
+float UJoltCapsuleComponent::GetGroundTraceDistance() const
+{
+	const float Length = CapsuleHalfHeight * (1 - StepHeightRatio) * 0.5f + CapsuleHalfHeight * StepHeightRatio;
+	return Length * GetRelativeScale3D().Z;
+}
+
+float UJoltCapsuleComponent::GetShapeHeight() const
+{
+	return GetScaledCapsuleHalfHeight();
+}
+
+float UJoltCapsuleComponent::GetShapeWidth() const
+{
+	return GetScaledCapsuleRadius();
+}
+
+#if WITH_EDITOR
+void UJoltCapsuleComponent::RecalculateCollider()
+{
+	
+	if (bIsUsingGitAmendSolution)
+	{
+		CapsuleHalfHeight = ColliderHeight * (1 - StepHeightRatio);
+		NewRelativeLocation = ColliderOffset+ FVector(0.f, 0.f, StepHeightRatio * ColliderHeight / 2.f);
+		SetRelativeLocation(NewRelativeLocation);
+		CapsuleRadius = ColliderRadius;
+
+		if (CapsuleHalfHeight < CapsuleRadius)
+		{
+			CapsuleRadius = CapsuleHalfHeight;
+		}
+	}
+	else
+	{
+		CapsuleHalfHeight = ColliderHeight;
+		CapsuleRadius = ColliderRadius;
+		if (CapsuleHalfHeight < CapsuleRadius)
+		{
+			CapsuleRadius = CapsuleHalfHeight;
+		}
+	}
+	
+	
+	
+	MarkRenderStateDirty();
+	
+	
+}
+
+void UJoltCapsuleComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, StepHeightRatio))
+	{
+		RecalculateCollider();
+	}
+	else if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, ColliderHeight))
+	{
+		RecalculateCollider();
+	}
+	else if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, ColliderRadius))
+	{
+		RecalculateCollider();
+	}
+	else if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, ColliderOffset))
+	{
+		RecalculateCollider();
+	}
+	
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+
+#endif

@@ -24,10 +24,18 @@ class JOLTBRIDGE_API IJoltPrimitiveComponentInterface
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
 public:
 	
-	virtual const FJoltBodyOptions& GetShapeOptions() const = 0;
+	virtual const FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() const = 0;
 	
-	virtual FJoltBodyOptions& GetShapeOptions() = 0;
+	virtual FJoltPhysicsBodySettings& GetJoltPhysicsBodySettings() = 0;
 	
 	virtual const FCollisionResponseContainer& GetDefaultResponseContainer() const = 0;
+	
+	virtual float GetGroundTraceDistance() const { return 0.f;}
+	
+	virtual float GetShapeHeight() const { return 0.f;}
+	virtual float GetShapeWidth() const { return 0.f;}
+	virtual float GetShapeDepth() const { return 0.f;}
+	virtual float GetShapeStepHeightRatio() const { return 0.f;}
+	
 	//virtual ECollisionChannel GetDefaultCollisionChannel() const = 0;
 };

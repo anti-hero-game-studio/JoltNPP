@@ -16,6 +16,11 @@ GENERATED_BODY()
 public:
 	UJoltSettings(const FObjectInitializer& obj);
 	
+	
+	UPROPERTY(Config, EditAnywhere, Category = Settings)
+	FVector WorldGravityAcceleration = FVector(0.f, 0.f, -981.f);
+	
+	
 	/*
 	 * 	Maximum number of bodies to support.
 	 * 	This will be divided by 3
