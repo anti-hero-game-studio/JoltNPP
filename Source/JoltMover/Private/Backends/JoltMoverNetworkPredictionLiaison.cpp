@@ -134,7 +134,7 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
 		if (!MoverComp) return;
-		const UPrimitiveComponent* P = MoverComp->GetUpdatedComponent<UPrimitiveComponent>();
+		const UPrimitiveComponent* P = MoverComp->GetJoltPhysicsBodyComponent();
 		if (!P) return;
 
 		const FJoltUpdatedMotionState* S = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>(); 

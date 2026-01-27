@@ -105,11 +105,11 @@ void UJoltPhysicsWalkingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	}
 
 	OutProposedMove = UJoltGroundMovementUtils::ComputeControlledGroundMove(Params);
-
 	if (TurnGenerator)
 	{
 		OutProposedMove.AngularVelocityDegrees = IJoltTurnGeneratorInterface::Execute_GetTurn(TurnGenerator, IntendedOrientation_WorldSpace, StartState, *StartingSyncState, TimeStep, OutProposedMove, SimBlackboard);
 	}
+	
 }
 
 void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState)

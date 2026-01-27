@@ -680,7 +680,7 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 		JPH::MassProperties msp;
 		msp.ScaleToMass(Options.Mass);
 		ShapeSettings.mMassPropertiesOverride = msp;
-		ShapeSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+		ShapeSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
 		
 		if (Options.bKeepShapeVertical)
 		{
@@ -695,8 +695,10 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 
 	if (Options.GravityOverrideType == EGravityOverrideType::FROM_MOVER)
 	{
-		// Gravity will come directly from the mover component.
+		// Velocity will come directly from the mover component.
 		ShapeSettings.mGravityFactor = 0;
+		ShapeSettings.mLinearDamping = 0.f;
+		ShapeSettings.mAngularDamping = 0.f;
 	}
 	
 	
@@ -929,6 +931,7 @@ void UJoltPhysicsWorldSubsystem::SetGravityFactor(const UPrimitiveComponent* Tar
 	BodyInterface->SetGravityFactor(ID, GravityFactor);
 }
 
+
 void UJoltPhysicsWorldSubsystem::SetAngularVelocity(AActor* Target, const FVector AngularVelocity)
 {
 	int32 Id = INDEX_NONE;
@@ -945,8 +948,8 @@ void UJoltPhysicsWorldSubsystem::ApplyVelocity(const UPrimitiveComponent* Target
 	const int32 Id = FindShapeId(Target);
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
-	BodyInterface->AddForce(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));
-	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
+	BodyInterface->SetLinearAndAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity), JoltHelpers::ToJoltVector3(AngularVelocity));
+	//BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
 }
 
 void UJoltPhysicsWorldSubsystem::WakeBody(const UPrimitiveComponent* Target)
@@ -1460,6 +1463,11 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 	}
 	
 	return Results;
+}
+
+FVector UJoltPhysicsWorldSubsystem::GetVelocity(const JPH::BodyID& ID) const
+{
+	return JoltHelpers::ToUnrealVector3(BodyInterface->GetLinearVelocity(ID));
 }
 
 void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_FirstHit& Result, FHitResult& OutHit) const

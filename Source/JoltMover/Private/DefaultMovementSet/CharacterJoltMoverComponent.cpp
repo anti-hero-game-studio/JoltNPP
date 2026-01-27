@@ -328,7 +328,7 @@ void UCharacterJoltMoverComponent::InitializeJoltCharacter()
 		if (UpdatedCompAsPrimitive)
 		{
 			const float GravityFactor = FMath::Abs(S->GetJoltSettings()->WorldGravityAcceleration.Length() / GetGravityAcceleration().Length());
-			S->SetGravityFactor(UpdatedCompAsPrimitive, GravityFactor);
+			S->SetGravityFactor(UpdatedCompAsPrimitive, 0);
 		}
 		
 	}

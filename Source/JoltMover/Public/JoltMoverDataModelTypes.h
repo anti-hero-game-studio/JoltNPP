@@ -252,6 +252,9 @@ public:
 	UE_API virtual void Interpolate(const FJoltMoverDataStructBase& From, const FJoltMoverDataStructBase& To, float Pct) override;
 	
 	UE_API void SetTransforms_WorldSpace(const FVector& WorldLocation, const FRotator& WorldOrient, const FVector& WorldVelocity, const FVector& WorldAngularVelocityDegrees, UPrimitiveComponent* Base=nullptr, const FName& BaseBone = NAME_None);
+	UE_API void SetLinearVelocity_WorldSpace(const FVector& LinearVelocity);
+	UE_API void SetAngularVelocity_WorldSpace(const FVector& LinearVelocity);
+	UE_API void SetLinearAndAngularVelocity_WorldSpace(const FVector& Linear, const FVector& Angular);
 
 	// Returns whether the base setting succeeded
 	UE_API bool SetMovementBase(UPrimitiveComponent* Base, FName BaseBone=NAME_None);

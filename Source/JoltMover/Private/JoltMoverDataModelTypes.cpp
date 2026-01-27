@@ -356,6 +356,22 @@ void FJoltUpdatedMotionState::SetTransforms_WorldSpace(const FVector& WorldLocat
 	}
 }
 
+void FJoltUpdatedMotionState::SetLinearVelocity_WorldSpace(const FVector& LinearVelocity)
+{
+	Velocity = UE::JoltNetQuant::QuantizePackedVector<10>(LinearVelocity);
+}
+
+void FJoltUpdatedMotionState::SetAngularVelocity_WorldSpace(const FVector& LinearVelocity)
+{
+	AngularVelocityDegrees = UE::JoltNetQuant::QuantizePackedVector<10>(LinearVelocity);
+}
+
+void FJoltUpdatedMotionState::SetLinearAndAngularVelocity_WorldSpace(const FVector& Linear, const FVector& Angular)
+{
+	Velocity = UE::JoltNetQuant::QuantizePackedVector<10>(Linear);
+	AngularVelocityDegrees = UE::JoltNetQuant::QuantizePackedVector<10>(Angular);
+}
+
 
 bool FJoltUpdatedMotionState::SetMovementBase(UPrimitiveComponent* Base, FName BaseBone)
 {
