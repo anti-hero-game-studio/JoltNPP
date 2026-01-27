@@ -18,10 +18,10 @@ struct FJoltFloorCheckResult;
 UCLASS(MinimalAPI, Blueprintable, BlueprintType, Experimental)
 class UJoltPhysicsFallingMode : public UJoltPhysicsCharacterMovementMode
 {
-GENERATED_BODY()
-
+	GENERATED_BODY()
 
 public:
+	
 	UE_API UJoltPhysicsFallingMode(const FObjectInitializer& ObjectInitializer);
 
 	UE_API virtual void OnRegistered(const FName ModeName) override;
@@ -84,6 +84,15 @@ public:
 	float TerminalVerticalSpeed;
 	
 protected:
+	/**
+	 * Is called at the end of the tick in falling mode. Handles checking any landings that should occur and switching to specific modes
+	 * (i.e. landing on a walkable surface would switch to the walking movement mode) 
+	 */
+	UFUNCTION(BlueprintCallable, Category=Mover)
+	UE_API virtual void ProcessLanded(const FJoltFloorCheckResult& FloorResult, FVector& Velocity, FJoltRelativeBaseInfo& BaseInfo, FJoltMoverTickEndData& TickEndData) const;
+
+	UE_API void CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector& FinalLocation, const FRotator& FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const;
+
 	TWeakObjectPtr<const UJoltCommonLegacyMovementSettings> CommonLegacySettings;
 };
 

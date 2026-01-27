@@ -56,7 +56,7 @@ void UJoltPhysicsFallingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	// We don't want velocity limits to take the falling velocity component into account, since it is handled 
 	//   separately by the terminal velocity of the environment.
 	const FVector StartVelocity = StartingSyncState->GetVelocity_WorldSpace_Quantized();
-	const FVector StartHorizontalVelocity =  FVector::VectorPlaneProject(StartVelocity, UpDirection); // Removes the velocity in the Up direction
+	const FVector StartHorizontalVelocity =  FVector::VectorPlaneProject(StartVelocity, UpDirection);
 
 	FJoltFreeMoveParams Params;
 	if (CharacterInputs)
@@ -83,7 +83,7 @@ void UJoltPhysicsFallingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	}
 	else
 	{
-		IntendedOrientation_WorldSpace = CharacterInputs->GetOrientationIntentDir_WorldSpace().ToOrientationRotator(); // TODO:@GreggoryAddison::Determinism || This needs to use a net quantized value.
+		IntendedOrientation_WorldSpace = CharacterInputs->GetOrientationIntentDir_WorldSpace().ToOrientationRotator();
 	}
 
 	IntendedOrientation_WorldSpace = UJoltMovementUtils::ApplyGravityToOrientationIntent(IntendedOrientation_WorldSpace, MoverComp->GetWorldToGravityTransform(), CommonLegacySettings->bShouldRemainVertical);
@@ -148,17 +148,6 @@ void UJoltPhysicsFallingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	{
 		UJoltMovementUtils::SetGravityVerticalComponent(OutProposedMove.LinearVelocity, VelocityWithGravity.Dot(UpDirection), UpDirection);
 	}
-	
-	
-	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
-	const UJoltCommonLegacyMovementSettings* SharedSettingsPtr = GetMoverComponent<UJoltMoverComponent>()->FindSharedSettings<UJoltCommonLegacyMovementSettings>();
-	if (SimBlackboard && Subsystem && SharedSettingsPtr)
-	{
-		FJoltFloorCheckResult FloorResult;
-		FloorCheck(StartingSyncState->GetLocation_WorldSpace(), OutProposedMove.LinearVelocity,TimeStep.StepMs * 0.001f, FloorResult);
-		
-		SimBlackboard->Set(CommonBlackboard::LastFloorResult, FloorResult);
-	}
 }
 
 void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState)
@@ -168,56 +157,116 @@ void UJoltPhysicsFallingMode::SimulationTick_Implementation(const FJoltSimulatio
 		return;
 	}
 
-	
 	UJoltMoverComponent* MoverComponent = GetMoverComponent();
 	const FJoltMoverTickStartData& StartState = Params.StartState;
-	if (!MoverComponent) return;
-	
-	const UJoltMoverBlackboard* SimBlackboard = MoverComponent->GetSimBlackboard();
-	if (!SimBlackboard) return;
-
-	const FJoltProposedMove ProposedMove = Params.ProposedMove;
+	USceneComponent* UpdatedComponent = Params.MovingComps.UpdatedComponent.Get();
+	FJoltProposedMove ProposedMove = Params.ProposedMove;
 
 	const FJoltCharacterDefaultInputs* CharacterInputs = StartState.InputCmd.Collection.FindDataByType<FJoltCharacterDefaultInputs>();
 	const FJoltUpdatedMotionState* StartingSyncState = StartState.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
 	check(StartingSyncState);
-	
-	
-	FJoltMoverTargetSyncState& OutputSyncState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltMoverTargetSyncState>();
-	
-	FJoltFloorCheckResult FloorResult;
-	if (!SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, FloorResult))
-	{
-		FloorCheck(StartingSyncState->GetLocation_WorldSpace(), ProposedMove.LinearVelocity,Params.TimeStep.StepMs * 0.001f, FloorResult);
-	}
 
-	
-	if (FloorResult.bBlockingHit)
-	{
-		// We are grounded and need to switch movement modes
-		OutputState.MovementEndState.RemainingMs = 0.0f;
-		OutputState.MovementEndState.NextModeName = DefaultModeNames::Walking;
-		OutputSyncState.UpdateTargetVelocity(StartingSyncState->GetVelocity_WorldSpace_Quantized(), StartingSyncState->GetAngularVelocityDegrees_WorldSpace_Quantized());
-		return;
-	}
+	FJoltUpdatedMotionState& OutputSyncState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
 
-	
 	const float DeltaSeconds = Params.TimeStep.StepMs * 0.001f;
+	float PctTimeApplied = 0.f;
 
-	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
-	if (!Subsystem) return;
-
-	FRotator TargetRotation = UJoltMovementUtils::ApplyAngularVelocityToRotator(StartingSyncState->GetOrientation_WorldSpace(), ProposedMove.AngularVelocityDegrees, DeltaSeconds);
+	FJoltMovementRecord MoveRecord;
+	MoveRecord.SetDeltaSeconds(DeltaSeconds);
 	
-	
-	// The physics simulation applies Z-only gravity acceleration via physics volumes, so we need to account for it here 
-	const FVector TargetVel = ProposedMove.LinearVelocity - MoverComponent->GetGravityAcceleration() * FVector::UpVector * DeltaSeconds;
-	const FVector DeltaLinearVelocity = (TargetVel - StartingSyncState->GetVelocity_WorldSpace_Quantized()).GetClampedToMaxSize(TerminalVerticalSpeed) * DeltaSeconds;
-	const FVector DeltaAngularVelocity = (ProposedMove.AngularVelocityDegrees - StartingSyncState->GetAngularVelocityDegrees_WorldSpace_Quantized()) * DeltaSeconds;
+	UJoltMoverBlackboard* SimBlackboard = MoverComponent->GetSimBlackboard_Mutable();
 
-	OutputState.MovementEndState.RemainingMs = 0.0f;
-	OutputState.MovementEndState.NextModeName = Params.StartState.SyncState.MovementMode;
-	OutputSyncState.UpdateTargetVelocity(ProposedMove.LinearVelocity, ProposedMove.AngularVelocityDegrees);
+	SimBlackboard->Invalidate(CommonBlackboard::LastFloorResult);	// falling = no valid floor
+	SimBlackboard->Invalidate(CommonBlackboard::LastFoundDynamicMovementBase);
+
+	OutputSyncState.MoveDirectionIntent = (ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector);
+
+	// Use the orientation intent directly. If no intent is provided, use last frame's orientation. Note that we are assuming rotation changes can't fail. 
+	const FRotator StartingOrient = StartingSyncState->GetOrientation_WorldSpace_Quantized();
+	const FRotator TargetOrient = UJoltMovementUtils::ApplyAngularVelocityToRotator(StartingOrient, ProposedMove.AngularVelocityDegrees, DeltaSeconds);
+
+	const FVector StartingFallingVelocity = StartingSyncState->GetVelocity_WorldSpace_Quantized();
+
+	//FVector MoveDelta = 0.5f * (PriorFallingVelocity + ProposedMove.LinearVelocity) * DeltaSeconds; 	// TODO: revive midpoint integration
+	const FVector StartLocation = StartingSyncState->GetLocation_WorldSpace_Quantized();
+	const FVector TargetLocation = StartLocation + (ProposedMove.LinearVelocity * DeltaSeconds);
+
+	const FQuat StartRotation = StartingOrient.Quaternion();
+	FQuat TargetRotation = TargetOrient.Quaternion();
+	if (CommonLegacySettings->bShouldRemainVertical)
+	{
+		TargetRotation = FRotationMatrix::MakeFromZX(MoverComponent->GetUpDirection(), TargetRotation.GetForwardVector()).ToQuat();
+	}
+
+
+	FHitResult SweepHit(1.f);
+
+	FVector LocationInProgress = StartLocation;
+	FQuat   RotationInProgress = StartRotation;
+
+	const FVector MoveDelta = TargetLocation - StartLocation;
+
+	const bool bWouldMove = UJoltAsyncMovementUtils::TestDepenetratingMove(Params.MovingComps, StartLocation, TargetLocation, StartRotation, TargetRotation, /* bShouldSweep */ true, OUT SweepHit, IN OUT MoveRecord);
+
+	LocationInProgress = StartLocation + ((TargetLocation - StartLocation) * SweepHit.Time);
+	RotationInProgress = FQuat::Slerp(StartRotation, TargetRotation, SweepHit.Time);
+
+	// Compute final velocity based on how long we actually go until we get a hit.
+
+	FJoltFloorCheckResult LandingFloor;
+
+	// Handle impact, whether it's a landing surface or something to slide on
+	if (SweepHit.IsValidBlockingHit())
+	{
+		float LastMoveTimeSlice = DeltaSeconds;
+		float SubTimeTickRemaining = LastMoveTimeSlice * (1.f - SweepHit.Time);
+
+		PctTimeApplied += SweepHit.Time * (1.f - PctTimeApplied);
+
+		// Check for hitting a landing surface
+		if (UJoltAirMovementUtils::IsValidLandingSpot(Params.MovingComps, LocationInProgress,
+				SweepHit, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, LandingFloor))
+		{
+			// Adjust height to float slightly above walkable floor
+			LocationInProgress = UJoltGroundMovementUtils::TestMoveToKeepMinHeightAboveFloor(Params.MovingComps, LocationInProgress, RotationInProgress, CommonLegacySettings->MaxWalkSlopeCosine, IN OUT LandingFloor, IN OUT MoveRecord);
+			CaptureFinalState(StartingSyncState, LocationInProgress, RotationInProgress.Rotator(), LandingFloor, DeltaSeconds, DeltaSeconds * PctTimeApplied, ProposedMove.AngularVelocityDegrees, OutputSyncState, OutputState, IN OUT MoveRecord);
+			return;
+		}
+
+		
+		LandingFloor.HitResult = SweepHit;
+		SimBlackboard->Set(CommonBlackboard::LastFloorResult, LandingFloor);
+		
+		FJoltMoverOnImpactParams ImpactParams(DefaultModeNames::Falling, SweepHit, MoveDelta);
+		MoverComponent->HandleImpact(ImpactParams);
+
+		// We didn't land on a walkable surface, so let's try to slide along it
+		const float PctOfTimeUsedForSliding = UJoltAirMovementUtils::TestFallingMoveAlongHitSurface(
+			Params.MovingComps, TargetLocation-StartLocation, LocationInProgress, TargetRotation, 
+			/*bHandleImpact=*/true, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks,
+			IN OUT SweepHit, OUT LandingFloor, IN OUT MoveRecord);
+
+		if (PctOfTimeUsedForSliding > 0.f)
+		{
+			LocationInProgress = SweepHit.TraceStart + ((SweepHit.TraceEnd - SweepHit.TraceStart) * PctOfTimeUsedForSliding);
+			RotationInProgress = FQuat::Slerp(RotationInProgress, TargetRotation, PctOfTimeUsedForSliding);
+		}
+
+		PctTimeApplied += SweepHit.Time * (1.f - PctTimeApplied);
+
+		if (LandingFloor.IsWalkableFloor())
+		{
+			// Adjust height to float slightly above walkable floor
+			LocationInProgress = UJoltGroundMovementUtils::TestMoveToKeepMinHeightAboveFloor(Params.MovingComps, LocationInProgress, RotationInProgress, CommonLegacySettings->MaxWalkSlopeCosine, IN OUT LandingFloor, IN OUT MoveRecord);
+		}
+	}
+	else
+	{
+		// This indicates an unimpeded full move
+		PctTimeApplied = 1.f;
+	}
+	
+	CaptureFinalState(StartingSyncState, LocationInProgress, RotationInProgress.Rotator(), LandingFloor, DeltaSeconds, DeltaSeconds* PctTimeApplied,ProposedMove.AngularVelocityDegrees, OutputSyncState, OutputState, MoveRecord);
 }
 
 
@@ -235,4 +284,92 @@ void UJoltPhysicsFallingMode::OnUnregistered()
 	CommonLegacySettings = nullptr;
 
 	Super::OnUnregistered();
+}
+
+void UJoltPhysicsFallingMode::ProcessLanded(const FJoltFloorCheckResult& FloorResult, FVector& Velocity, FJoltRelativeBaseInfo& BaseInfo, FJoltMoverTickEndData& TickEndData) const
+{
+	// TODO: Refactor landed events for async movement. For now, leave the immediate event, but listeners are limited in what they can do from a worker thread.
+
+	const UJoltMoverComponent* MoverComp = GetMoverComponent();
+	UJoltMoverBlackboard* SimBlackboard = MoverComp->GetSimBlackboard_Mutable();
+
+	FName NextMovementMode = NAME_None; 
+	// if we can walk on the floor we landed on
+	if (FloorResult.IsWalkableFloor())
+	{
+		if (bCancelVerticalSpeedOnLanding)
+		{
+			const FPlane MovementPlane(FVector::ZeroVector, MoverComp->GetUpDirection());
+			Velocity = UJoltMovementUtils::ConstrainToPlane(Velocity, MovementPlane, false);
+		}
+		else
+		{
+			Velocity = FVector::VectorPlaneProject(Velocity, FloorResult.HitResult.Normal);
+		}
+		
+		// Transfer to LandingMovementMode (usually walking), and cache any floor / movement base info
+		NextMovementMode = CommonLegacySettings->GroundMovementModeName;
+
+		SimBlackboard->Set(CommonBlackboard::LastFloorResult, FloorResult);
+
+		if (UJoltBasedMovementUtils::IsADynamicBase(FloorResult.HitResult.GetComponent()))
+		{
+			BaseInfo.SetFromFloorResult(FloorResult);
+		}
+	}
+	// we could check for other surfaces here (i.e. when swimming is implemented we can check the floor hit here and see if we need to go into swimming)
+
+	// This would also be a good spot for implementing some falling physics interactions (i.e. falling into a movable object and pushing it based off of this actors velocity)
+	
+	// if a new mode was set go ahead and switch to it after this tick and broadcast we landed
+	if (!NextMovementMode.IsNone())
+	{
+		TickEndData.MovementEndState.NextModeName = NextMovementMode;
+		OnLanded.Broadcast(NextMovementMode, FloorResult.HitResult);
+	}
+}
+
+void UJoltPhysicsFallingMode::CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector& FinalLocation, const FRotator& FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const
+{
+	UJoltMoverBlackboard* SimBlackboard = GetMoverComponent()->GetSimBlackboard_Mutable();
+
+	// Check for time refunds
+	constexpr float MinRemainingSecondsToRefund = 0.0001f;	// If we have this amount of time (or more) remaining, give it to the next simulation step.
+
+	if ((DeltaSeconds - DeltaSecondsUsed) >= MinRemainingSecondsToRefund)
+	{
+		const float PctOfTimeRemaining = (1.0f - (DeltaSecondsUsed / DeltaSeconds));
+		TickEndData.MovementEndState.RemainingMs = PctOfTimeRemaining * DeltaSeconds * 1000.f;
+	}
+	else
+	{
+		TickEndData.MovementEndState.RemainingMs = 0.f;
+	}
+	
+	Record.SetDeltaSeconds( DeltaSecondsUsed );
+	
+	// If we didn't use any time lets just pass along velocity so we don't lose it when we go into the next mode with refunded time
+	FVector EffectiveVelocity = DeltaSecondsUsed <= UE_SMALL_NUMBER ? StartSyncState->GetVelocity_WorldSpace_Quantized() : Record.GetRelevantVelocity();
+
+	FJoltRelativeBaseInfo MovementBaseInfo;
+	ProcessLanded(FloorResult, EffectiveVelocity, MovementBaseInfo, TickEndData);
+
+	if (MovementBaseInfo.HasRelativeInfo())
+	{
+		SimBlackboard->Set(CommonBlackboard::LastFoundDynamicMovementBase, MovementBaseInfo);
+
+		OutputSyncState.SetTransforms_WorldSpace( FinalLocation,
+												  FinalRotation,
+												  EffectiveVelocity,
+												  AngularVelocityDegrees,
+												  MovementBaseInfo.MovementBase.Get(), MovementBaseInfo.BoneName);
+	}
+	else
+	{
+		OutputSyncState.SetTransforms_WorldSpace( FinalLocation,
+												  FinalRotation,
+												  EffectiveVelocity,
+												  AngularVelocityDegrees,
+												  nullptr); // no movement base
+	}
 }

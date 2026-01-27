@@ -19,10 +19,6 @@ UJoltPhysicsWalkingMode::UJoltPhysicsWalkingMode(const FObjectInitializer& Objec
 	: Super(ObjectInitializer)
 {
 	SharedSettingsClasses.Add(UJoltCommonLegacyMovementSettings::StaticClass());
-	
-	RadialForceLimit = 2000.0f;
-	SwingTorqueLimit = 3000.0f;
-	TwistTorqueLimit = 1500.0f;
 
 	GameplayTags.AddTag(JoltMover_IsOnGround);
 }
@@ -30,9 +26,6 @@ UJoltPhysicsWalkingMode::UJoltPhysicsWalkingMode(const FObjectInitializer& Objec
 void UJoltPhysicsWalkingMode::GenerateMove_Implementation(const FJoltMoverTickStartData& StartState, const FJoltMoverTimeStep& TimeStep, FJoltProposedMove& OutProposedMove) const
 {
 	const UJoltMoverComponent* MoverComp = GetMoverComponent();
-	if (!MoverComp) return;
-	const UPrimitiveComponent* UpdatedComponent = MoverComp->GetUpdatedComponent<UPrimitiveComponent>();
-	if (!UpdatedComponent) return;
 	const FJoltCharacterDefaultInputs* CharacterInputs = StartState.InputCmd.Collection.FindDataByType<FJoltCharacterDefaultInputs>();
 	const FJoltUpdatedMotionState* StartingSyncState = StartState.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
 	check(StartingSyncState);
@@ -110,29 +103,13 @@ void UJoltPhysicsWalkingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 		Params.Friction = CommonLegacySettings->bUseSeparateBrakingFriction ? CommonLegacySettings->BrakingFriction : CommonLegacySettings->GroundFriction;
 		Params.Friction *= CommonLegacySettings->BrakingFrictionFactor;
 	}
-	
+
 	OutProposedMove = UJoltGroundMovementUtils::ComputeControlledGroundMove(Params);
-	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
-	if (SimBlackboard && Subsystem)
+
+	if (TurnGenerator)
 	{
-		const FJoltUserData* D = Subsystem->GetUserData(UpdatedComponent);
-		if (!D) return;
-		// Update the floor result and check the proposed move to prevent movement onto unwalkable surfaces
-		FVector OutDeltaPos = FVector::ZeroVector;
-		FJoltFloorCheckResult FloorResult;
-		GetFloorAndCheckMovement(*StartingSyncState, OutProposedMove, DeltaSeconds, D ,FloorResult, OutDeltaPos);
-
-		OutProposedMove.LinearVelocity = OutDeltaPos / DeltaSeconds;
-
-		SimBlackboard->Set(CommonBlackboard::LastFloorResult, FloorResult);
-		//SimBlackboard->Set(CommonBlackboard::LastWaterResult, WaterResult);
-
-		if (bMaintainHorizontalGroundVelocity)
-		{
-			// So far have assumed we are on level ground, so now add velocity up the slope
-			OutProposedMove.LinearVelocity -= UpDirection * OutProposedMove.LinearVelocity.Dot(FloorResult.HitResult.ImpactNormal) / UpDirection.Dot(FloorResult.HitResult.ImpactNormal);
-		}
-	};
+		OutProposedMove.AngularVelocityDegrees = IJoltTurnGeneratorInterface::Execute_GetTurn(TurnGenerator, IntendedOrientation_WorldSpace, StartState, *StartingSyncState, TimeStep, OutProposedMove, SimBlackboard);
+	}
 }
 
 void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState)
@@ -141,9 +118,6 @@ void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulatio
 	{
 		return;
 	}
-	
-	UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
-	if (!Subsystem) return;
 
 	UJoltMoverComponent* MoverComp = GetMoverComponent();
 	const FJoltMoverTickStartData& StartState = Params.StartState;
@@ -151,14 +125,9 @@ void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulatio
 
 	const FJoltCharacterDefaultInputs* CharacterInputs = StartState.InputCmd.Collection.FindDataByType<FJoltCharacterDefaultInputs>();
 	const FJoltUpdatedMotionState* StartingSyncState = StartState.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
-	const FJoltMoverTargetSyncState* StartingTargetState = StartState.SyncState.Collection.FindDataByType<FJoltMoverTargetSyncState>();
 	check(StartingSyncState);
 
 	FJoltUpdatedMotionState& OutputSyncState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
-	OutputSyncState = *StartingSyncState;
-	
-	FJoltMoverTargetSyncState& OutputTargetState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltMoverTargetSyncState>();
-	OutputTargetState = *StartingTargetState;
 
 
 	const float DeltaSeconds = Params.TimeStep.StepMs * 0.001f;
@@ -177,6 +146,12 @@ void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulatio
 
 	FVector UpDirection = MoverComp->GetUpDirection();
 	
+	// If we don't have cached floor information, we need to search for it again
+	if (!SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, CurrentFloor))
+	{
+		UJoltFloorQueryUtils::FindFloor(Params.MovingComps, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, StartLocation, CurrentFloor);
+	}
+
 	OutputSyncState.MoveDirectionIntent = (ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector);
 
 	const FRotator StartingOrient = StartingSyncState->GetOrientation_WorldSpace();
@@ -197,119 +172,179 @@ void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulatio
 	FHitResult MoveHitResult(1.f);
 	
 	FVector CurMoveDelta = OrigMoveDelta;
-	
-	
-	if (!CharacterInputs)
+
+	bool bDidAttemptMovement = false;
+
+	float PercentTimeAppliedSoFar = MoveHitResult.Time;
+	bool bWasFirstMoveBlocked = false;
+
+	if (!CurMoveDelta.IsNearlyZero() || bIsOrientationChanging)
 	{
-		UE_LOG(LogJoltMover, Warning, TEXT("Jolt Physics Falling Mode requires FJoltCharacterDefaultInputs"));
-		return;
-	}
-	
-	FVector GroundNormal = UpDirection;
-	FJoltFloorCheckResult FloorResult;
-	if (SimBlackboard)
-	{
-		SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, FloorResult);
-		GroundNormal = FloorResult.HitResult.ImpactNormal;
-	};
+		// Attempt to move the full amount first
+		bDidAttemptMovement = true;
 
-	if (FloorResult.IsWalkableFloor())
-	{
-		const JPH::Body* GroundParticle = Subsystem->GetRigidBody(FloorResult.HitResult);
-		if (!GroundParticle) return;
-		
-		
-		const float InitialHeightAboveFloor = FloorResult.FloorDist - GetTargetHeight();
+		const bool bWouldMove = UJoltAsyncMovementUtils::TestDepenetratingMove(Params.MovingComps, StartLocation, TargetLocation, StartRotation, TargetRotation, /* bShouldSweep */ true, OUT MoveHitResult, MoveRecord);
 
-		// Put the target position on the floor at the target height
-		FVector TargetPosition = StartingSyncState->GetLocation_WorldSpace() - UpDirection * InitialHeightAboveFloor;
+		float LastMoveSeconds = DeltaSeconds;
 
-		// The base movement mode does not apply gravity in walking mode so apply here.
-		// Also remove the gravity that will be applied by the physics simulation.
-		// This is so that the gravity in this mode will be consistent with the gravity
-		// set on the mover, not the default physics gravity
-		const float GravityFactor = JoltHelpers::ToUnrealFloat(Subsystem->GetGravity(FloorResult.HitResult.GetComponent()));
-		const FVector ProjectedVelocity = StartingSyncState->GetVelocity_WorldSpace() + (-UpDirection * GravityFactor) * DeltaSeconds;
-		FVector TargetVelocity = ProjectedVelocity - JoltHelpers::ToUnrealFloat(GravityFactor) * FVector::UpVector * DeltaSeconds;
+		LocationInProgress = StartLocation + ((TargetLocation - StartLocation) * MoveHitResult.Time);
+		RotationInProgress = FQuat::Slerp(StartRotation, TargetRotation, MoveHitResult.Time);
 
-		// If we have movement intent and not moving straight up/down then use the proposed move plane velocity
-		// otherwise just fall with gravity
-		constexpr float ParallelCosThreshold = 0.999f;
-		const bool bNonVerticalVelocity = !FVector::Parallel(TargetVelocity.GetSafeNormal(), UpDirection, ParallelCosThreshold);
-		const bool bUseProposedMove = bNonVerticalVelocity || ProposedMove.bHasDirIntent;
-		bool bNormalVelocityIntent = false;
-
-		if (bUseProposedMove)
+		if (MoveHitResult.bStartPenetrating)
 		{
-			const FVector ProposedMovePlaneVelocity = ProposedMove.LinearVelocity - ProposedMove.LinearVelocity.ProjectOnToNormal(GroundNormal);
-
-			// Preserve whatever normal/vertical velocity you decided earlier,
-			// but overwrite the tangential (ground plane) component with the proposed move.
-			TargetVelocity = ProposedMovePlaneVelocity + TargetVelocity.ProjectOnToNormal(GroundNormal);
-
-			// Optional: if you want motion relative to moving ground, add ground velocity:
-			// TargetVelocity = ProjectedGroundVelocity + ProposedMovePlaneVelocity
-			//               + TargetVelocity.ProjectOnToNormal(GroundNormal);
+			// We started by being stuck in geometry and need to resolve it first
+			// TODO: try to resolve starting stuck in geometry
 		}
-
-		
-		FVector ProjectedGroundVelocity = UJoltPhysicsGroundMovementUtils::ComputeLocalGroundVelocity_Internal(this, StartingSyncState->GetLocation_WorldSpace(), FloorResult);
-		if (GroundParticle && GroundParticle->IsActive())
+		else if (MoveHitResult.IsValidBlockingHit())
 		{
-			const float BodyGravity = JoltHelpers::ToUnrealFloat(Subsystem->GetGravity(FloorResult.HitResult.GetComponent()));
-			if (FMath::Abs(BodyGravity) > 0)
+			// We impacted something (possibly a ramp, possibly a barrier)
+			PercentTimeAppliedSoFar = MoveHitResult.Time;		
+
+			// Check if the blockage is a walkable ramp rising in front of us
+			if ((MoveHitResult.Time > 0.f) && (MoveHitResult.Normal.Dot(UpDirection) > UE_KINDA_SMALL_NUMBER) && 
+			    UJoltFloorQueryUtils::IsHitSurfaceWalkable(MoveHitResult, UpDirection, CommonLegacySettings->MaxWalkSlopeCosine))
 			{
-				// This might not be correct if different physics objects have different gravity but is saves having to go
-				// to the component to get the gravity on the physics volume.
-				ProjectedGroundVelocity += BodyGravity * UpDirection * DeltaSeconds;
+				// It's a walkable ramp, so cut up the move and attempt to move the remainder of it along the ramp's surface, possibly generating another hit
+				const float PercentTimeRemaining = 1.f - PercentTimeAppliedSoFar;
+				CurMoveDelta = UJoltGroundMovementUtils::ComputeDeflectedMoveOntoRamp(CurMoveDelta * PercentTimeRemaining, UpDirection, MoveHitResult, CommonLegacySettings->MaxWalkSlopeCosine, CurrentFloor.bLineTrace);
+
+				UJoltAsyncMovementUtils::TestDepenetratingMove(Params.MovingComps, LocationInProgress, LocationInProgress+CurMoveDelta, RotationInProgress, TargetRotation, /*bShouldSweep=*/ true, OUT MoveHitResult, MoveRecord);
+
+				LastMoveSeconds = PercentTimeRemaining * LastMoveSeconds;
+
+				LocationInProgress = LocationInProgress + ((MoveHitResult.TraceEnd - MoveHitResult.TraceStart) * MoveHitResult.Time);
+				RotationInProgress = FQuat::Slerp(RotationInProgress, TargetRotation, MoveHitResult.Time);
+
+				const float SecondHitPercent = MoveHitResult.Time * PercentTimeRemaining;
+				PercentTimeAppliedSoFar = FMath::Clamp(PercentTimeAppliedSoFar + SecondHitPercent, 0.f, 1.f);
+			}
+
+			if (MoveHitResult.IsValidBlockingHit())
+			{
+				// If still blocked, try to step up onto the blocking object OR slide along it
+				// TODO: Take movement bases into account
+				if (UJoltGroundMovementUtils::CanStepUpOnHitSurface(MoveHitResult)) // || (CharacterOwner->GetMovementBase() != nullptr && Hit.HitObjectHandle == CharacterOwner->GetMovementBase()->GetOwner()))
+				{
+					// hit a barrier or unwalkable surface, try to step up and onto it
+					const FVector PreStepUpLocation = LocationInProgress;
+					const FVector DownwardDir = -UpDirection;
+
+					FJoltOptionalFloorCheckResult StepUpFloorResult;	// passed to sub-operations, so we can use their final floor results if they did a test
+					FVector PostStepUpLocation; // Valid if step-up succeeded
+
+					if (UJoltGroundMovementUtils::TestMoveToStepOver(Params.MovingComps, DownwardDir, CommonLegacySettings->MaxStepHeight, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, CommonLegacySettings->FloorSweepDistance, OrigMoveDelta * (1.f - PercentTimeAppliedSoFar), RotationInProgress, MoveHitResult, CurrentFloor, false, &StepUpFloorResult, PostStepUpLocation, MoveRecord))
+					{
+						LocationInProgress = PostStepUpLocation;
+						RotationInProgress = TargetRotation;
+						PercentTimeAppliedSoFar = 1.0f;
+					}
+					else
+					{
+						FJoltMoverOnImpactParams ImpactParams(DefaultModeNames::Walking, MoveHitResult, OrigMoveDelta);
+						MoverComp->HandleImpact(ImpactParams);
+						float PercentAvailableToSlide = 1.f - PercentTimeAppliedSoFar;
+
+						float SlideAmount = UJoltGroundMovementUtils::TestGroundedMoveAlongHitSurface(Params.MovingComps, OrigMoveDelta, LocationInProgress, TargetRotation, /*bHandleImpact=*/true, CommonLegacySettings->MaxStepHeight, CommonLegacySettings->MaxWalkSlopeCosine, IN OUT MoveHitResult, IN OUT MoveRecord);
+
+						LocationInProgress = LocationInProgress + ((MoveHitResult.TraceEnd - MoveHitResult.TraceStart) * SlideAmount);
+						RotationInProgress = FQuat::Slerp(RotationInProgress, TargetRotation, SlideAmount);
+						PercentTimeAppliedSoFar += PercentAvailableToSlide * SlideAmount;
+					}
+				}
+				else if (MoveHitResult.Component.IsValid() && !MoveHitResult.Component.Get()->CanCharacterStepUp(Cast<APawn>(MoveHitResult.GetActor())))
+				{
+					FJoltMoverOnImpactParams ImpactParams(DefaultModeNames::Walking, MoveHitResult, OrigMoveDelta);
+					MoverComp->HandleImpact(ImpactParams);
+					float PercentAvailableToSlide = 1.f - PercentTimeAppliedSoFar;
+					
+					float SlideAmount = UJoltGroundMovementUtils::TestGroundedMoveAlongHitSurface(Params.MovingComps, OrigMoveDelta, LocationInProgress, TargetRotation, /*bHandleImpact=*/true, CommonLegacySettings->MaxStepHeight, CommonLegacySettings->MaxWalkSlopeCosine, IN OUT MoveHitResult, IN OUT MoveRecord);
+
+					LocationInProgress = LocationInProgress + ((MoveHitResult.TraceEnd - MoveHitResult.TraceStart) * SlideAmount);
+					RotationInProgress = FQuat::Slerp(RotationInProgress, TargetRotation, SlideAmount);
+
+
+					PercentTimeAppliedSoFar += PercentAvailableToSlide * SlideAmount;
+				}
 			}
 		}
-		const bool bIsGroundMoving = ProjectedGroundVelocity.SizeSquared() > UE_KINDA_SMALL_NUMBER;
-		const FVector ProjectedRelativeVelocity = TargetVelocity - ProjectedGroundVelocity;
-		const float ProjectedRelativeNormalVelocity = FloorResult.HitResult.ImpactNormal.Dot(TargetVelocity - ProjectedGroundVelocity);
-		const float ProjectedRelativeVerticalVelocity = GroundNormal.Dot(TargetVelocity - ProjectedGroundVelocity);
-		const FVector GravityDir = -UpDirection * GravityFactor;
-		const float VerticalVelocityLimit = bNormalVelocityIntent ? 2.0f / DeltaSeconds : FMath::Abs(GroundNormal.Dot(GravityDir) * DeltaSeconds);
 
-		bool bIsLiftingOffSurface = false;
-		if ((ProjectedRelativeNormalVelocity > VerticalVelocityLimit) && bIsGroundMoving && (ProjectedRelativeVerticalVelocity > VerticalVelocityLimit))
+		// Search for the floor we've ended up on
+		UJoltFloorQueryUtils::FindFloor(Params.MovingComps, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, LocationInProgress, CurrentFloor);
+
+		if (CurrentFloor.IsWalkableFloor())
 		{
-			bIsLiftingOffSurface = true;
+			LocationInProgress = UJoltGroundMovementUtils::TestMoveToAdjustToFloor(Params.MovingComps, LocationInProgress, RotationInProgress, CommonLegacySettings->MaxWalkSlopeCosine, IN OUT CurrentFloor, MoveRecord);
 		}
-
-		// Determine if the character is stepping up or stepping down.
-		// If stepping up make sure that the step height is less than the max step height
-		// and the new surface has CanCharacterStepUpOn set to true.
-		// If stepping down make sure the step height is less than the max step height.
-		const float EndHeightAboveFloor = InitialHeightAboveFloor + ProjectedRelativeVerticalVelocity * DeltaSeconds;
-		const bool bIsSteppingDown = InitialHeightAboveFloor > UE_KINDA_SMALL_NUMBER;
-		const bool bIsWithinReach = EndHeightAboveFloor <= CommonLegacySettings->MaxStepHeight;
-		const bool bIsSupported = bIsWithinReach && !bIsLiftingOffSurface;
-		const bool bNeedsVerticalVelocityToTarget = bIsSupported && bIsSteppingDown && (EndHeightAboveFloor > 0.0f) && !bIsLiftingOffSurface;
-		if (bNeedsVerticalVelocityToTarget)
+    
+		if (!CurrentFloor.IsWalkableFloor() && !CurrentFloor.HitResult.bStartPenetrating)
 		{
-			TargetVelocity -= FractionalDownwardVelocityToTarget * (EndHeightAboveFloor / DeltaSeconds) * UpDirection;
+			// No floor or not walkable, so let's let the airborne movement mode deal with it
+			OutputState.MovementEndState.NextModeName = CommonLegacySettings->AirMovementModeName;
+			OutputState.MovementEndState.RemainingMs = Params.TimeStep.StepMs - (Params.TimeStep.StepMs * PercentTimeAppliedSoFar);
+			MoveRecord.SetDeltaSeconds((Params.TimeStep.StepMs - OutputState.MovementEndState.RemainingMs) * 0.001f);
+			CaptureFinalState(LocationInProgress, RotationInProgress.Rotator(), bDidAttemptMovement, CurrentFloor, MoveRecord, ProposedMove.AngularVelocityDegrees, OutputSyncState);
+			return;
 		}
-
-		// Target orientation
-		// This is always applied regardless of whether the character is supported
-		const FRotator TargetOrientation = UJoltMovementUtils::ApplyAngularVelocityToRotator(StartingSyncState->GetOrientation_WorldSpace(), ProposedMove.AngularVelocityDegrees, DeltaSeconds);
-
-		OutputTargetState.UpdateTargetVelocity(TargetVelocity.GetClampedToMaxSize(GetMaxSpeed()), ProposedMove.AngularVelocityDegrees);
-		OutputState.MovementEndState.RemainingMs = 0.0f;
-		OutputState.MovementEndState.NextModeName = Params.StartState.SyncState.MovementMode;
-		OutputSyncState.MoveDirectionIntent = ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector;
 	}
 	else
 	{
-		OutputState.MovementEndState.RemainingMs = 0.0f;
-		OutputState.MovementEndState.NextModeName = DefaultModeNames::Falling;
-		OutputTargetState.UpdateTargetVelocity(StartingSyncState->GetVelocity_WorldSpace(), StartingSyncState->GetAngularVelocityDegrees_WorldSpace());
-		OutputSyncState.MoveDirectionIntent = ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector;
+		/* TODO: Support option to perform floor checks even when not moving
+		// If the actor isn't moving we still may need to check if they have a valid floor, such as if they're on an elevator platform moving up/down
+		if ((FloorCheckPolicy == EJoltStaticFloorCheckPolicy::Always) || 
+		    (FloorCheckPolicy == EJoltStaticFloorCheckPolicy::OnDynamicBaseOnly && StartingSyncState->GetMovementBase()))
+		{
+			UJoltFloorQueryUtils::FindFloor(Params.MovingComps, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, LocationInProgress, CurrentFloor);
+		
+			FHitResult Hit(CurrentFloor.HitResult);
+			if (Hit.bStartPenetrating)
+			{
+				// The floor check failed because it started in penetration
+				// We do not want to try to move downward because the downward sweep failed, rather we'd like to try to pop out of the floor.
+				Hit.TraceEnd = Hit.TraceStart + UpDirection * 2.4;
+				FVector RequestedAdjustment = UJoltMovementUtils::ComputePenetrationAdjustment(Hit);
+			
+				const EMoveComponentFlags IncludeBlockingOverlapsWithoutEvents = (MOVECOMP_NeverIgnoreBlockingOverlaps | MOVECOMP_DisableBlockingOverlapDispatch);
+				EMoveComponentFlags MoveComponentFlags = MOVECOMP_NoFlags;
+				MoveComponentFlags = (MoveComponentFlags | IncludeBlockingOverlapsWithoutEvents);
+				UJoltMovementUtils::TryMoveToResolvePenetration(Params.MovingComps, MoveComponentFlags, RequestedAdjustment, Hit, RotationInProgress, MoveRecord);
+
+				//TODO: Update Location/RotationInProgress
+			}
+		
+			if (!CurrentFloor.IsWalkableFloor() && !Hit.bStartPenetrating)
+			{
+				// No floor or not walkable, so let's let the airborne movement mode deal with it
+				OutputState.MovementEndState.NextModeName = CommonLegacySettings->AirMovementModeName;
+				OutputState.MovementEndState.RemainingMs = Params.TimeStep.StepMs;
+				MoveRecord.SetDeltaSeconds((Params.TimeStep.StepMs - OutputState.MovementEndState.RemainingMs) * 0.001f);
+				CaptureFinalState(LocationInProgress, RotationInProgress.Rotator(), bDidAttemptMovement, CurrentFloor, MoveRecord, OutputSyncState);
+				return;
+			}
+		}
+		*/
 	}
-	
-	
+
+	CaptureFinalState(LocationInProgress, RotationInProgress.Rotator(), bDidAttemptMovement, CurrentFloor, MoveRecord, ProposedMove.AngularVelocityDegrees, OutputSyncState);
+
 }
+
+UObject* UJoltPhysicsWalkingMode::GetTurnGenerator()
+{
+	return TurnGenerator;
+}
+
+void UJoltPhysicsWalkingMode::SetTurnGeneratorClass(TSubclassOf<UObject> TurnGeneratorClass)
+{
+	if (TurnGeneratorClass)
+	{
+		TurnGenerator = NewObject<UObject>(this, TurnGeneratorClass);
+	}
+	else
+	{
+		TurnGenerator = nullptr; // Clearing the turn generator is valid - will go back to the default turn generation
+	}
+}
+
 
 void UJoltPhysicsWalkingMode::OnRegistered(const FName ModeName)
 {
@@ -326,114 +361,62 @@ void UJoltPhysicsWalkingMode::OnUnregistered()
 	Super::OnUnregistered();
 }
 
-bool UJoltPhysicsWalkingMode::CanStepUpOnHitSurface(const FJoltFloorCheckResult& FloorResult) const
+void UJoltPhysicsWalkingMode::CaptureFinalState(const FVector FinalLocation, const FRotator FinalRotation, bool bDidAttemptMovement, const FJoltFloorCheckResult& FloorResult, const FJoltMovementRecord& Record, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState) const
 {
-	const float StepHeight = GetTargetHeight() - FloorResult.FloorDist;
+	FJoltRelativeBaseInfo PriorBaseInfo;
 
-	bool bWalkable = StepHeight <= CommonLegacySettings->MaxStepHeight;
-	constexpr float MinStepHeight = 2.0f;
-	const bool SteppingUp = StepHeight > MinStepHeight;
-	if (bWalkable && SteppingUp)
+	const UJoltMoverComponent* MoverComp = GetMoverComponent();
+	UJoltMoverBlackboard* SimBlackboard = MoverComp->GetSimBlackboard_Mutable();
+
+	const bool bHasPriorBaseInfo = SimBlackboard->TryGet(CommonBlackboard::LastFoundDynamicMovementBase, PriorBaseInfo);
+
+	FJoltRelativeBaseInfo CurrentBaseInfo = UpdateFloorAndBaseInfo(FloorResult);
+
+	// If we're on a dynamic base and we're not trying to move, keep using the same relative actor location. This prevents slow relative 
+	//  drifting that can occur from repeated floor sampling as the base moves through the world.
+	if (CurrentBaseInfo.HasRelativeInfo() 
+		&& bHasPriorBaseInfo && !bDidAttemptMovement 
+		&& PriorBaseInfo.UsesSameBase(CurrentBaseInfo))
 	{
-		bWalkable = UJoltGroundMovementUtils::CanStepUpOnHitSurface(FloorResult.HitResult);
+		CurrentBaseInfo.ContactLocalPosition = PriorBaseInfo.ContactLocalPosition;
 	}
+	
+	if (CurrentBaseInfo.HasRelativeInfo())
+	{
+		SimBlackboard->Set(CommonBlackboard::LastFoundDynamicMovementBase, CurrentBaseInfo);
 
-	return bWalkable;
+		OutputSyncState.SetTransforms_WorldSpace( FinalLocation,
+                                                  FinalRotation,
+                                                  Record.GetRelevantVelocity(),
+                                                  AngularVelocityDegrees,
+                                                  CurrentBaseInfo.MovementBase.Get(), CurrentBaseInfo.BoneName);
+	}
+	else
+	{
+		SimBlackboard->Invalidate(CommonBlackboard::LastFoundDynamicMovementBase);
+
+		OutputSyncState.SetTransforms_WorldSpace( FinalLocation,
+                                                  FinalRotation,
+                                                  Record.GetRelevantVelocity(),
+                                                  AngularVelocityDegrees,
+                                                  nullptr);  // no movement base
+	}
 }
 
-void UJoltPhysicsWalkingMode::GetFloorAndCheckMovement(const FJoltUpdatedMotionState& SyncState, const FJoltProposedMove& ProposedMove, float DeltaSeconds, 
-	const FJoltUserData* InputData, FJoltFloorCheckResult& FloorResult, FVector& OutDeltaPos) const
+
+FJoltRelativeBaseInfo UJoltPhysicsWalkingMode::UpdateFloorAndBaseInfo(const FJoltFloorCheckResult& FloorResult) const
 {
-	const UJoltMoverComponent* MoverComponent = GetMoverComponent();
-	if (!MoverComponent) return;
-	FVector DeltaPos = ProposedMove.LinearVelocity * DeltaSeconds;
-	OutDeltaPos = DeltaPos;
-	
-	if (DeltaPos.SizeSquared() < UE_SMALL_NUMBER)
+	FJoltRelativeBaseInfo ReturnBaseInfo;
+
+	const UJoltMoverComponent* MoverComp = GetMoverComponent();
+	UJoltMoverBlackboard* SimBlackboard = MoverComp->GetSimBlackboard_Mutable();
+
+	SimBlackboard->Set(CommonBlackboard::LastFloorResult, FloorResult);
+
+	if (FloorResult.IsWalkableFloor() && UJoltBasedMovementUtils::IsADynamicBase(FloorResult.HitResult.GetComponent()))
 	{
-		// Stationary
-		OutDeltaPos = FVector::ZeroVector;
-		return;
-	}
-	
-	if (!InputData)
-	{
-		UE_LOG(LogJoltMover, Error, TEXT("Could not find User Input Data In UJoltPhysicsWalkingMode::GetFloorAndCheckMovement"));
-		return;
+		ReturnBaseInfo.SetFromFloorResult(FloorResult);
 	}
 
-	FloorCheck(SyncState.GetLocation_WorldSpace(), ProposedMove.LinearVelocity, DeltaSeconds, FloorResult);
-
-	if (!FloorResult.bBlockingHit)
-	{
-		// No result at the end position. Fall back on the current floor result
-		return;
-	}
-
-	bool bWalkableFloor = FloorResult.bWalkableFloor && CanStepUpOnHitSurface(FloorResult);
-	if (bWalkableFloor)
-	{
-		// Walkable floor found
-		return;
-	}
-	
-	// Hit something but not walkable. Try a new query to find a walkable surface
-	const float StepBlockedHeight = GetTargetHeight() - InputData->ShapeHeight + InputData->ShapeRadius;
-	const float StepHeight = GetTargetHeight() - FloorResult.FloorDist;
-
-	if (StepHeight > StepBlockedHeight)
-	{
-		// Collision should prevent movement. Just try to find ground at start of movement
-		FloorCheck(SyncState.GetLocation_WorldSpace(), FVector::Zero(), DeltaSeconds, FloorResult);
-		FloorResult.bWalkableFloor = FloorResult.bWalkableFloor && CanStepUpOnHitSurface(FloorResult);
-		return;
-	}
-
-
-	
-
-	// Try to limit the movement to remain on a walkable surface
-	FVector HorizSurfaceDir = FVector::VectorPlaneProject(FloorResult.HitResult.ImpactNormal, MoverComponent->GetUpDirection());
-	float HorizSurfaceDirSizeSq = HorizSurfaceDir.SizeSquared();
-	bool bFoundOutwardDir = false;
-	if (HorizSurfaceDirSizeSq > UE_SMALL_NUMBER)
-	{
-		HorizSurfaceDir *= FMath::InvSqrt(HorizSurfaceDirSizeSq);
-		bFoundOutwardDir = true;
-	}
-	else
-	{
-		// Flat unwalkable surface. Try and get the horizontal direction from the normal instead
-		HorizSurfaceDir = FVector::VectorPlaneProject(FloorResult.HitResult.Normal, MoverComponent->GetUpDirection());
-		HorizSurfaceDirSizeSq = HorizSurfaceDir.SizeSquared();
-
-		if (HorizSurfaceDirSizeSq > UE_SMALL_NUMBER)
-		{
-			HorizSurfaceDir *= FMath::InvSqrt(HorizSurfaceDirSizeSq);
-			bFoundOutwardDir = true;
-		}
-	}
-
-	if (bFoundOutwardDir)
-	{
-		const float DP = DeltaPos.Dot(HorizSurfaceDir);
-		FVector NewDeltaPos = DeltaPos;
-		if (DP < 0.0f)
-		{
-			// If we're moving away try a ray query at the end of the motion
-			NewDeltaPos = DeltaPos - DP * HorizSurfaceDir;
-		}
-
-		FloorCheck(SyncState.GetLocation_WorldSpace(), NewDeltaPos, DeltaSeconds, FloorResult);
-		FloorResult.bWalkableFloor = FloorResult.bWalkableFloor && CanStepUpOnHitSurface(FloorResult);
-
-		if (FloorResult.bWalkableFloor)
-		{
-			OutDeltaPos = NewDeltaPos;
-		}
-	}
-	else
-	{
-		OutDeltaPos = FVector::ZeroVector;
-	}
+	return ReturnBaseInfo;
 }

@@ -21,61 +21,41 @@ struct FJoltMovementRecord;
 UCLASS(MinimalAPI, Blueprintable, BlueprintType, Experimental)
 class UJoltPhysicsWalkingMode : public UJoltPhysicsCharacterMovementMode
 {
-	GENERATED_BODY()
-	
+		GENERATED_BODY()
+
 public:
 	UE_API UJoltPhysicsWalkingMode(const FObjectInitializer& ObjectInitializer);
 	
 	UE_API virtual void GenerateMove_Implementation(const FJoltMoverTickStartData& StartState, const FJoltMoverTimeStep& TimeStep, FJoltProposedMove& OutProposedMove) const override;
 
 	UE_API virtual void SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState) override;
-	
-	virtual void OnRegistered(const FName ModeName) override;
-	virtual void OnUnregistered() override;
-	
 
-// Damping factor to control the softness of the interaction between the character and the ground
-	// Set to 0 for no damping and 1 for maximum damping
-	UPROPERTY(EditAnywhere, Category = "Constraint Settings", meta = (ClampMin = "0", UIMin = "0", ClampMax = "1", UIMax = "1"))
-	float GroundDamping = 0.0f;
+	// Returns the active turn generator. Note: you will need to cast the return value to the generator you expect to get, it can also be none
+	UFUNCTION(BlueprintPure, Category=Mover)
+	UE_API UObject* GetTurnGenerator();
 
-	// Maximum force the character can apply to hold in place while standing on an unwalkable incline
-	UPROPERTY(EditAnywhere, Category = "Constraint Settings", meta = (ClampMin = "0", UIMin = "0", ForceUnits = "Newtons"))
-	float FrictionForceLimit = 100.0f;
+	// Sets the active turn generator to use the class provided. Note: To set it back to the default implementation pass in none
+	UFUNCTION(BlueprintCallable, Category=Mover)
+	UE_API void SetTurnGeneratorClass(UPARAM(meta=(MustImplement="/Script/JoltMover.TurnGeneratorInterface", AllowAbstract="false")) TSubclassOf<UObject> TurnGeneratorClass);
 
-	// Scaling applied to the radial force limit to raise the limit to always allow the character to
-	// reach the motion target/
-	// A value of 1 means that the radial force limit will be increased as needed to match the force
-	// required to achieve the motion target.
-	// A value of 0 means no scaling will be applied.
-	UPROPERTY(EditAnywhere, Category = "Constraint Settings", meta = (ClampMin = "0", UIMin = "0", ClampMax = "1", UIMax = "1"))
-	float FractionalRadialForceLimitScaling = 1.0f;
+protected:
 
-	// Controls the reaction force applied to the ground in the ground plane when the character is moving
-	// A value of 1 means that the full reaction force is applied
-	// A value of 0 means the character only applies a normal force to the ground and no tangential force
-	UPROPERTY(EditAnywhere, Category = "Constraint Settings", meta = (ClampMin = "0", UIMin = "0", ClampMax = "1", UIMax = "1"))
-	float FractionalGroundReaction = 1.0f;
+	/** Choice of behavior for floor checks while not moving.  */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Mover)
+	EJoltStaticFloorCheckPolicy FloorCheckPolicy = EJoltStaticFloorCheckPolicy::OnDynamicBaseOnly;
 
-	// Controls how much downward velocity is applied to keep the character rooted to the ground when the character
-	// is within MaxStepHeight of the ground surface.
-	UPROPERTY(EditAnywhere, Category = "Movement Settings", meta = (ClampMin = "0", UIMin = "0", ClampMax = "1", UIMax = "1"))
-	float FractionalDownwardVelocityToTarget = 1.0f;
+	/** Optional modular object for generating rotation towards desired orientation. If not specified, linear interpolation will be used. */
+	UPROPERTY(EditAnywhere, Instanced, Category=Mover, meta=(ObjectMustImplement="/Script/JoltMover.TurnGeneratorInterface"))
+	TObjectPtr<UObject> TurnGenerator;
 
-	/**
-	 * If true, walking movement always maintains horizontal velocity when moving up ramps, which causes movement up ramps to be faster parallel to the ramp surface.
-	 * If false, then walking movement maintains velocity magnitude parallel to the ramp surface.
-	 */
-	UPROPERTY(EditAnywhere, Category = "Movement Settings")
-	uint8 bMaintainHorizontalGroundVelocity : 1 = 0;
+	UE_API virtual void OnRegistered(const FName ModeName) override; 
+	UE_API virtual void OnUnregistered() override;
+
+	UE_API void CaptureFinalState(const FVector FinalLocation, const FRotator FinalRotation, bool bDidAttemptMovement, const FJoltFloorCheckResult& FloorResult, const FJoltMovementRecord& Record, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState) const;
+
+	UE_API FJoltRelativeBaseInfo UpdateFloorAndBaseInfo(const FJoltFloorCheckResult& FloorResult) const;
 
 	TWeakObjectPtr<const UJoltCommonLegacyMovementSettings> CommonLegacySettings;
-	
-	
-protected:
-	UE_API virtual bool CanStepUpOnHitSurface(const FJoltFloorCheckResult& FloorResult) const;
-	UE_API virtual void GetFloorAndCheckMovement(const FJoltUpdatedMotionState& SyncState, const FJoltProposedMove& ProposedMove, float DeltaSeconds, 
-		const FJoltUserData* InputData, FJoltFloorCheckResult& FloorResult, FVector& OutDeltaPos) const;
 };
 
 #undef UE_API

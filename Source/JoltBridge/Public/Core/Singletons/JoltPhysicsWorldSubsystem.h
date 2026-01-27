@@ -129,7 +129,14 @@ public:
 	void SetAngularVelocity(AActor* Target, const FVector AngularVelocity);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
-	void UpdateActorVelocity(AActor* Target, const FVector LinearVelocity, const FVector AngularVelocity);
+	void ApplyVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity, const FVector AngularVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void WakeBody(const UPrimitiveComponent* Target);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void SleepBody(const UPrimitiveComponent* Target);
+	
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void ZeroActorVelocity(AActor* Target);

@@ -940,16 +940,29 @@ void UJoltPhysicsWorldSubsystem::SetAngularVelocity(AActor* Target, const FVecto
 	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
 }
 
-void UJoltPhysicsWorldSubsystem::UpdateActorVelocity(AActor* Target, const FVector LinearVelocity, const FVector AngularVelocity)
+void UJoltPhysicsWorldSubsystem::ApplyVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity, const FVector AngularVelocity)
 {
-	uint32 Id = INDEX_NONE;
-	const FUnrealShapeDescriptor& Descriptor = GetShapeDescriptorData(Target);
-	Id = Descriptor.GetRootColliderId();
-	
+	const int32 Id = FindShapeId(Target);
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
 	BodyInterface->AddForce(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));
 	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
+}
+
+void UJoltPhysicsWorldSubsystem::WakeBody(const UPrimitiveComponent* Target)
+{
+	const int32 Id = FindShapeId(Target);
+	if (Id == INDEX_NONE) return;
+	JPH::BodyID JoltBodyId(Id);
+	BodyInterface->ActivateBody(JoltBodyId);
+}
+
+void UJoltPhysicsWorldSubsystem::SleepBody(const UPrimitiveComponent* Target)
+{
+	const int32 Id = FindShapeId(Target);
+	if (Id == INDEX_NONE) return;
+	JPH::BodyID JoltBodyId(Id);
+	BodyInterface->DeactivateBody(JoltBodyId);
 }
 
 void UJoltPhysicsWorldSubsystem::ZeroActorVelocity(AActor* Target)
@@ -1079,7 +1092,7 @@ int32 UJoltPhysicsWorldSubsystem::LineTraceSingle(const FVector& Start, const FV
 	} 
 	
 	JPH::RayCastSettings	 Settings;
-	FVector					 dir = End/* - Start*/;
+	FVector					 dir = End - Start;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPosition(Start), JoltHelpers::ToJoltVector3(dir) };
 	FRaycastCollector_FirstHit Collector(*MainPhysicsSystem, ray);
 	
@@ -1116,6 +1129,8 @@ int32 UJoltPhysicsWorldSubsystem::LineTraceSingle(const FVector& Start, const FV
 	
 	if (DrawDebugTraces > 0)
 	{
+		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, DrawDebugTraces, 0, 1);
+		
 		if (OutHit.bBlockingHit)
 		{
 			DrawDebugLine(GetWorld(), Start, OutHit.Location, FColor::Green, false, DrawDebugTraces, 0, 1);
@@ -1145,7 +1160,7 @@ TArray<int32> UJoltPhysicsWorldSubsystem::LineTraceMulti(const FVector& Start, c
 
 	
 	JPH::RayCastSettings	 Settings;
-	FVector					 dir = End/* - Start*/;
+	FVector					 dir = End - Start;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPosition(Start), JoltHelpers::ToJoltVector3(dir) };
 	FRaycastCollector_AllHits Collector(*MainPhysicsSystem, ray);
 	
@@ -1244,15 +1259,15 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	
 	JPH::RMat44 FromTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, Start));
 	JPH::RMat44 ToTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, FinalEnd));
-	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End/* - Start*/);
+	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End - Start);
 	
-	JPH::RShapeCast ShapeCast
-	{ 
+	JPH::RShapeCast ShapeCast = JPH::RShapeCast::sFromWorldTransform(CollisionShape, JPH::RVec3::sOne(), FromTransform, Dir);
+	/*{ 
 		CollisionShape,
 		JoltHelpers::ToJoltVector3(FVector(1), false),
 		FromTransform,
 		Dir
-	};
+	};*/
 	
 	JPH::ShapeCastSettings Settings;
 	Settings.mReturnDeepestPoint = false;
@@ -1278,7 +1293,7 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 		(
 			ShapeCast,
 			Settings,
-			JPH::RVec3::sZero(),
+			ShapeCast.mCenterOfMassStart.GetTranslation(),
 			Collector,
 			{},
 			{},
@@ -1291,7 +1306,7 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 		(
 			ShapeCast,
 			Settings,
-			JPH::RVec3::sZero(),
+			ShapeCast.mCenterOfMassStart.GetTranslation(),
 			Collector,
 			{},
 			{},
@@ -1362,22 +1377,23 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 		FinalEnd.Z += SMALL_NUMBER;
 	}
 	
+	
 	JPH::RMat44 FromTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, Start));
 	JPH::RMat44 ToTransform = JoltHelpers::ToJoltTransform(FTransform(Rotation, FinalEnd));
-	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End /*- Start*/);
+	JPH::Vec3 Dir = JoltHelpers::ToJoltVector3(End - Start);
 	
-	JPH::RShapeCast ShapeCast
-	{ 
+	JPH::RShapeCast ShapeCast = JPH::RShapeCast::sFromWorldTransform(CollisionShape, JPH::RVec3::sOne(), FromTransform, Dir);
+	/*{ 
 		CollisionShape,
-		JoltHelpers::ToJoltVector3(FVector(1), false),
+		JoltHelpers::ToJoltVector3(FVector(1), true),
 		FromTransform,
 		Dir
-	};
+	};*/
 	
 	JPH::ShapeCastSettings Settings;
-	Settings.mReturnDeepestPoint = false;
+	/*Settings.mReturnDeepestPoint = false;
 	Settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
-	Settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
+	Settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;*/
 	
 	FSweepCastCollector_AllHits Collector(*MainPhysicsSystem, ShapeCast);
 
@@ -1455,6 +1471,13 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_Firs
 	const FVector ImpactNormal = JoltHelpers::ToUnrealVector3(Result.mContactNormal);
 	const FVector From = JoltHelpers::ToUnrealPosition(Result.mRay.mOrigin, UE_WORLD_ORIGIN);
 	
+	OutHit.bBlockingHit = Result.HasHit();
+	OutHit.Location = HitLocation;
+	OutHit.ImpactPoint = HitLocation;
+	OutHit.ImpactNormal = ImpactNormal;
+	OutHit.Normal = ImpactNormal;
+	OutHit.Distance = FVector::Distance(HitLocation, From);
+	
 	if (!Result.mBody) return;
 	
 	const FJoltUserData* UserData =  reinterpret_cast<FJoltUserData*>(Result.mBody->GetUserData());
@@ -1464,15 +1487,6 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_Firs
 	if (Result.HasHit())
 	{
 		HitActor = UserData->OwnerActor;
-	}
-	
-	{
-		OutHit.bBlockingHit = Result.HasHit();
-		OutHit.Location = HitLocation;
-		OutHit.ImpactPoint = HitLocation;
-		OutHit.ImpactNormal = ImpactNormal;
-		OutHit.Normal = ImpactNormal;
-		OutHit.Distance = FVector::Distance(HitLocation, From);
 	}
 	
 	if (!HitActor) return;
@@ -1499,6 +1513,13 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FClosestShapeCastHitCo
 	const FVector ImpactNormal = JoltHelpers::ToUnrealNormal(Result.mContactNormal);
 	const FVector From = JoltHelpers::ToUnrealPosition(Result.mRay.mCenterOfMassStart.GetTranslation(), UE_WORLD_ORIGIN);
 	
+	OutHit.bBlockingHit = Result.HasHit();
+	OutHit.Location = HitLocation;
+	OutHit.ImpactPoint = HitLocation;
+	OutHit.ImpactNormal = ImpactNormal;
+	OutHit.Normal = ImpactNormal;
+	OutHit.Distance = FVector::Distance(HitLocation, From);
+	
 	if (!Result.mBody) return;
 	
 	const FJoltUserData* UserData =  reinterpret_cast<FJoltUserData*>(Result.mBody->GetUserData());
@@ -1510,12 +1531,7 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FClosestShapeCastHitCo
 		HitActor = UserData->OwnerActor;
 	}
 	
-	OutHit.bBlockingHit = Result.HasHit();
-	OutHit.Location = HitLocation;
-	OutHit.ImpactPoint = HitLocation;
-	OutHit.ImpactNormal = ImpactNormal;
-	OutHit.Normal = ImpactNormal;
-	OutHit.Distance = FVector::Distance(HitLocation, From);
+	
 	
 	if (!HitActor) return;
 	if (GlobalShapeDescriptorDataCache.Contains(HitActor))

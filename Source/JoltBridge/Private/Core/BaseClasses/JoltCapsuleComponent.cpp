@@ -173,11 +173,19 @@ float UJoltCapsuleComponent::GetShapeWidth() const
 	return GetScaledCapsuleRadius();
 }
 
+void UJoltCapsuleComponent::WakeRigidBody(FName BoneName)
+{
+	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		S->WakeBody(this);
+	}
+}
+
 #if WITH_EDITOR
 void UJoltCapsuleComponent::RecalculateCollider()
 {
 	
-	if (bIsUsingGitAmendSolution)
+	if (bUseFloatingShape)
 	{
 		CapsuleHalfHeight = ColliderHeight * (1 - StepHeightRatio);
 		NewRelativeLocation = ColliderOffset+ FVector(0.f, 0.f, StepHeightRatio * ColliderHeight / 2.f);

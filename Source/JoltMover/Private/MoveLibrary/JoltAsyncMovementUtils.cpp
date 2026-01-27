@@ -23,8 +23,14 @@ static const FName TestSafeDepenetrationSubstepName = "TestSafeResolvePenetratio
 /* static */
 bool UJoltAsyncMovementUtils::TestDepenetratingMove(const FJoltMovingComponentSet& MovingComps, const FVector& StartLocation, const FVector& TargetLocation, const FQuat& StartRotation, const FQuat& TargetRotation, bool bShouldSweep, FHitResult& OutHit, FJoltMovementRecord& InOutMoveRecord)
 {
-	FJoltMoverCollisionParams CollisionParams(MovingComps.UpdatedComponent.Get());
-	return TestDepenetratingMove(MovingComps, StartLocation, TargetLocation, StartRotation, TargetRotation, bShouldSweep, CollisionParams, OutHit, InOutMoveRecord);
+	if (MovingComps.MoverComponent.Get() && MovingComps.MoverComponent.Get()->GetJoltPhysicsBodyComponent())
+	{
+		FJoltMoverCollisionParams CollisionParams(MovingComps.MoverComponent.Get()->GetJoltPhysicsBodyComponent());
+		return TestDepenetratingMove(MovingComps, StartLocation, TargetLocation, StartRotation, TargetRotation, bShouldSweep, CollisionParams, OutHit, InOutMoveRecord);
+	}
+	
+	return false;
+	
 }
 
 /* static */
@@ -347,7 +353,7 @@ bool UJoltAsyncMovementUtils::TestMoveComponent_Internal(const FJoltMovingCompon
 	}
 
 	// Perform movement collision checking if needed for this actor.
-	const bool bCollisionEnabled = UpdatedPrimitive->IsQueryCollisionEnabled();
+	const bool bCollisionEnabled = true;
 	UWorld* const MyWorld = UpdatedPrimitive->GetWorld();
 	if (MyWorld && bCollisionEnabled && (DeltaSizeSq > 0.f))
 	{

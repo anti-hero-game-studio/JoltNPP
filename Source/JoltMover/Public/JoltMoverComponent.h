@@ -456,6 +456,9 @@ public:	// Queries
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	JOLTMOVER_API USceneComponent* GetUpdatedComponent() const;
 
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API UPrimitiveComponent* GetUpdatedPrimitive() const;
+
 	// Typed accessor to root moving component
 	template<class T>
 	T* GetUpdatedComponent() const
@@ -700,6 +703,7 @@ protected:
 	  @param bRebaseBasedState	If true and the state was using based movement, it will use the current game world base pos/rot instead of the captured one. This is necessary during rollbacks.
 	*/
 	JOLTMOVER_API void SetFrameStateFromContext(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, bool bRebaseBasedState);
+	JOLTMOVER_API void SetFrameStateFromContextFromNestedChild(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, bool bRebaseBasedState);
 
 	/** Update cached frame state if it has changed */
 	JOLTMOVER_API void UpdateCachedFrameState(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState);

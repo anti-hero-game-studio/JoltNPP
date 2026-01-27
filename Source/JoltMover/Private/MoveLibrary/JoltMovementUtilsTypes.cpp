@@ -28,7 +28,7 @@ void FJoltMovingComponentSet::SetFrom(UJoltMoverComponent* InMoverComponent)
 	if (MoverComponent.IsValid())
 	{
 		UpdatedComponent = MoverComponent->GetUpdatedComponent();
-		UpdatedPrimitive = Cast<UPrimitiveComponent>(UpdatedComponent);
+		UpdatedPrimitive = MoverComponent->GetUpdatedPrimitive();
 	}
 }
 

@@ -444,7 +444,14 @@ void UJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncState, con
 	const FJoltMoverSyncState& InvalidSyncState = GetSyncState();
 	const FJoltMoverAuxStateContext& InvalidAuxState = CachedLastAuxState;
 	OnSimulationPreRollback(&InvalidSyncState, SyncState, &InvalidAuxState, AuxState, NewBaseTimeStep);
-	SetFrameStateFromContext(SyncState, AuxState, /* rebase? */ true);
+	if (GetJoltPhysicsBodyComponent() && GetJoltPhysicsBodyComponent() == GetUpdatedComponent())
+	{
+		SetFrameStateFromContext(SyncState, AuxState, /* rebase? */ true);
+	}
+	else if (GetJoltPhysicsBodyComponent() && GetJoltPhysicsBodyComponent() != GetUpdatedComponent())
+	{
+		SetFrameStateFromContextFromNestedChild(SyncState, AuxState,  true);
+	}
 	OnSimulationRollback(SyncState, AuxState, NewBaseTimeStep);
 }
 
@@ -465,7 +472,14 @@ void UJoltMoverComponent::FinalizeFrame(const FJoltMoverSyncState* SyncState, co
 		if ((ComponentLoc.Equals(StateLoc) == false ||
 			 ComponentRot.Equals(StateRot, ROTATOR_TOLERANCE) == false))
 		{
-			SetFrameStateFromContext(SyncState, AuxState, /* rebase? */ false);
+			if (GetJoltPhysicsBodyComponent() && GetJoltPhysicsBodyComponent() == GetUpdatedComponent())
+			{
+				SetFrameStateFromContext(SyncState, AuxState, /* rebase? */ false);
+			}
+			else if (GetJoltPhysicsBodyComponent() && GetJoltPhysicsBodyComponent() != GetUpdatedComponent())
+			{
+				SetFrameStateFromContextFromNestedChild(SyncState, AuxState,  false);
+			}
 		}
 		else
 		{
@@ -718,11 +732,11 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 	{
 		// If we're on the game thread, we can make use of a scoped movement update for better perf of multi-step movements.  If not, then we're definitely not moving the component in immediate mode so the scope would have no effect.
 		FScopedMovementUpdate ScopedMovementUpdate(UpdatedComponent, EScopedUpdate::DeferredUpdates);
-		ModeFSM->OnSimulationTick(UpdatedComponent, UpdatedCompAsPrimitive, SimBlackboard.Get(), SimInput, MoverTimeStep, SimOutput);
+		ModeFSM->OnSimulationTick(UpdatedComponent, UpdatedCompAsPrimitive.Get() ? UpdatedCompAsPrimitive.Get() : GetJoltPhysicsBodyComponent(), SimBlackboard.Get(), SimInput, MoverTimeStep, SimOutput);
 	}
 	else
 	{
-		ModeFSM->OnSimulationTick(UpdatedComponent, UpdatedCompAsPrimitive, SimBlackboard.Get(), SimInput, MoverTimeStep, SimOutput);
+		ModeFSM->OnSimulationTick(UpdatedComponent, UpdatedCompAsPrimitive.Get() ? UpdatedCompAsPrimitive.Get() : GetJoltPhysicsBodyComponent(), SimBlackboard.Get(), SimInput, MoverTimeStep, SimOutput);
 	}
 
 	if (FJoltUpdatedMotionState* OutputSyncState = SimOutput.SyncState.Collection.FindMutableDataByType<FJoltUpdatedMotionState>())
@@ -732,8 +746,8 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 
 		if (JoltMoverComponentCVars::WarnOnPostSimDifference)
 		{
-			if (UpdatedComponent->GetComponentLocation().Equals(OutputSyncState->GetLocation_WorldSpace()) == false ||
-				UpdatedComponent->GetComponentQuat().Equals(OutputSyncState->GetOrientation_WorldSpace().Quaternion(), UE_KINDA_SMALL_NUMBER) == false)
+			if (UpdatedComponent->GetComponentLocation().Equals(OutputSyncState->GetLocation_WorldSpace_Quantized()) == false ||
+				UpdatedComponent->GetComponentQuat().Equals(OutputSyncState->GetOrientation_WorldSpace_Quantized().Quaternion(), UE_KINDA_SMALL_NUMBER) == false)
 			{
 				UE_LOG(LogJoltMover, Warning, TEXT("Detected pos/rot difference between Mover actor (%s) sync state and scene component after sim ticking. This indicates a movement mode may not be authoring the final state correctly."), *GetNameSafe(UpdatedComponent->GetOwner()));
 			}
@@ -788,9 +802,9 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 	// Get our rigid body and apply central impulse
 	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
-		const FJoltMoverTargetSyncState* OutState = SimOutput.SyncState.Collection.FindDataByType<FJoltMoverTargetSyncState>();
+		const FJoltUpdatedMotionState* OutState = SimOutput.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
 		if (!OutState) return;
-		Subsystem->UpdateActorVelocity(GetOwner(), OutState->GetTargetVelocity_WorldSpace(), OutState->GetTargetAngularVelocity_WorldSpace());
+		Subsystem->ApplyVelocity(GetJoltPhysicsBodyComponent(), OutState->GetVelocity_WorldSpace_Quantized(), OutState->GetAngularVelocityDegrees_WorldSpace_Quantized());
 	}
 	
 }
@@ -800,13 +814,24 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::PostPhysicsTick);
 	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
-		if (!UpdatedCompAsPrimitive) return;
+		if (!JoltPhysicsComponent && !UpdatedCompAsPrimitive) return;
 		FJoltUpdatedMotionState& FinalState = SimOutput.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
 		
-		const int Id = Subsystem->GetActorRootShapeId(GetOwner());
 		FTransform T;
 		FVector V, A, F;
-		Subsystem->GetPhysicsState(UpdatedCompAsPrimitive, T, V, A, F);
+		Subsystem->GetPhysicsState(JoltPhysicsComponent ? JoltPhysicsComponent : UpdatedCompAsPrimitive, T, V, A, F);
+		
+		USceneComponent* U = GetJoltPhysicsBodyComponent();
+		
+		if (!U) return;
+		
+		// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
+		const FVector WorldLocation = T.GetLocation();
+		const FRotator WorldOrientation = T.GetRotation().Rotator();
+		
+		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+		
+		const FTransform NewTransform = U->GetComponentTransform().GetRelativeTransform(UpdatedComponent->GetComponentTransform()).Inverse() * Transform;
 		
 		/*const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : Transform = %s"), *MyRole, *T.ToHumanReadableString());
@@ -814,7 +839,7 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());*/
 		
 		//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
-		FinalState.SetTransforms_WorldSpace(T.GetLocation(), T.GetRotation().Rotator(), V, A, nullptr);
+		FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, A, nullptr);
 	}
 }
 
@@ -1090,13 +1115,14 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 			// the transform of the movement base, in case it has changed as well during the rollback.
 			MoverState->UpdateCurrentMovementBase();
 		}
-
+		
 		// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
-		const FVector WorldLocation = MoverState->GetLocation_WorldSpace();
-		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace();
+		const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
+		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
 		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
 		
 		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+		
 		
 		// Apply the desired transform to the scene component
 
@@ -1116,7 +1142,59 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 		}
 		else
 		{
-			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::None);
+			UpdatedComponent->SetWorldTransform(Transform, /*bSweep*/false, nullptr, ETeleportType::TeleportPhysics);
+			UpdatedComponent->ComponentVelocity = WorldVelocity;
+		}
+	}
+}
+
+void UJoltMoverComponent::SetFrameStateFromContextFromNestedChild(const FJoltMoverSyncState* SyncState,
+	const FJoltMoverAuxStateContext* AuxState, bool bRebaseBasedState)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::SetFrameStateFromContext);
+	UpdateCachedFrameState(SyncState, AuxState);
+
+	if (FJoltUpdatedMotionState* MoverState = const_cast<FJoltUpdatedMotionState*>(LastMoverDefaultSyncState))
+	{
+		if (bRebaseBasedState && MoverState->GetMovementBase())
+		{
+			// Note that this is modifying our cached mover state from what we received from Network Prediction. We are resampling
+			// the transform of the movement base, in case it has changed as well during the rollback.
+			MoverState->UpdateCurrentMovementBase();
+		}
+
+		USceneComponent* U = GetJoltPhysicsBodyComponent();
+		
+		if (!U) return;
+		
+		// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
+		const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
+		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
+		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
+		
+		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+		
+		const FTransform NewTransform = U->GetComponentTransform().GetRelativeTransform(UpdatedComponent->GetComponentTransform()).Inverse() * Transform;
+		
+		// Apply the desired transform to the scene component
+
+		// If we can, then we can utilize grouped movement updates to reduce the number of calls to SendPhysicsTransform
+		if (IsUsingDeferredGroupMovement())
+		{
+			// Signal to the USceneComponent that we are moving that this should be in a grouped update
+			// and not apply changes on the physics thread immediately
+			FScopedMovementUpdate MovementUpdate(
+				UpdatedComponent,
+				EScopedUpdate::DeferredGroupUpdates,
+				/*bRequireOverlapsEventFlagToQueueOverlaps*/ true);
+
+			
+			UpdatedComponent->SetWorldTransform(NewTransform, /*bSweep*/false, nullptr, ETeleportType::TeleportPhysics);
+			UpdatedComponent->ComponentVelocity = WorldVelocity;
+		}
+		else
+		{
+			UpdatedComponent->SetWorldTransform(NewTransform, /*bSweep*/false, nullptr, ETeleportType::TeleportPhysics);
 			UpdatedComponent->ComponentVelocity = WorldVelocity;
 		}
 	}
@@ -1177,6 +1255,14 @@ void UJoltMoverComponent::FindDefaultComponents()
 
 		if (MyActor && MyWorld && MyWorld->IsGameWorld())
 		{
+			// If the root is a jolt body just store it and return.
+			if (MyActor->GetRootComponent()->Implements<UJoltPrimitiveComponentInterface>())
+			{
+				SetJoltPhysicsComponent(Cast<UPrimitiveComponent>(MyActor->GetRootComponent()));
+				return;
+			}
+			
+			// Find the first child that is a jolt body and store that.
 			const int32 NumOfChildren = MyActor->GetRootComponent()->GetNumChildrenComponents();
 			for (int i = 0; i < NumOfChildren; ++i)
 			{
@@ -2262,12 +2348,18 @@ void UJoltMoverComponent::SetJoltPhysicsComponent(UPrimitiveComponent* NewPhysic
 {
 	//TODO:@GreggoryAddison::CodeCompletion || Need to unbind then rebind any delegates that we want to manage locally. A good one is on component hit so we can check for the ground without tracing. Meaning while falling I don't need to trace down I can just wait on the delegate signal
 	JoltPhysicsComponent = NewPhysicsComponent;
+	UpdatedCompAsPrimitive = NewPhysicsComponent;	
 }
 
 
 USceneComponent* UJoltMoverComponent::GetUpdatedComponent() const
 {
 	return UpdatedComponent.Get();
+}
+
+UPrimitiveComponent* UJoltMoverComponent::GetUpdatedPrimitive() const
+{
+	return UpdatedCompAsPrimitive.Get();
 }
 
 UPrimitiveComponent* UJoltMoverComponent::GetJoltPhysicsBodyComponent() const

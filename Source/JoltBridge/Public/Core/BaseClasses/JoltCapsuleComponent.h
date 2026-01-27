@@ -47,14 +47,20 @@ public:
 	virtual float GetShapeHeight() const override;
 	virtual float GetShapeWidth() const override;
 	virtual float GetShapeStepHeightRatio() const override {return StepHeightRatio;}
+	
+	virtual void WakeRigidBody(FName BoneName = NAME_None) override;
+
 
 protected:
 	
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Jolt Physics")
 	FJoltPhysicsBodySettings JoltPhysicsBodySettings;
 	
+	/* This requires your collision shape to be a child of the root component allowing for a collider that floats above the ground
+	* Currently not implemented.
+	 */
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category="Shape Options")
-	bool bIsUsingGitAmendSolution = false;
+	bool bUseFloatingShape = false;
 	
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Shape Options")
 	float ColliderHeight = 88.f;
