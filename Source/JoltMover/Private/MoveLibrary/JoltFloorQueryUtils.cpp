@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "MoveLibrary/JoltFloorQueryUtils.h"
 
@@ -182,7 +182,7 @@ bool UJoltFloorQueryUtils::FloorSweepTest(const FJoltMovingComponentSet& MovingC
 		// First test with the box rotated so the corners are along the major axes (ie rotated 45 degrees).
 		const FQuat Rotate45LocalYaw = FQuat::MakeFromEuler(FVector(0.0f, 0.0f, 45.0f));
 		
-		Subsystem->SweepTraceSingle(BoxShape, Start, Dir, (UpDirOrientation * Rotate45LocalYaw), ECC_Visibility, TArray<AActor*>{MovingComps.UpdatedComponent->GetOwner()}, OutHit);
+		Subsystem->SweepTraceSingle(BoxShape, Start, End, (UpDirOrientation * Rotate45LocalYaw), ECC_Visibility, TArray<AActor*>{MovingComps.UpdatedComponent->GetOwner()}, OutHit);
 		bBlockingHit = OutHit.bBlockingHit;
 
 		if (!bBlockingHit)
@@ -190,7 +190,7 @@ bool UJoltFloorQueryUtils::FloorSweepTest(const FJoltMovingComponentSet& MovingC
 			// Test again with the same box, not rotated.
 			
 			OutHit.Reset(1.f, false);
-			Subsystem->SweepTraceSingle(BoxShape, Start, Dir, (UpDirOrientation), ECC_Visibility, TArray<AActor*>{MovingComps.UpdatedComponent->GetOwner()}, OutHit);
+			Subsystem->SweepTraceSingle(BoxShape, Start, End, (UpDirOrientation), ECC_Visibility, TArray<AActor*>{MovingComps.UpdatedComponent->GetOwner()}, OutHit);
 			bBlockingHit = OutHit.bBlockingHit;
 		}
 	}
