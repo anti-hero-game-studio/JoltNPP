@@ -13,6 +13,7 @@
 #include "Services/JoltNetworkPredictionService_Interpolate.inl"
 #include "Services/JoltNetworkPredictionService_Rollback.inl"
 #include "Services/JoltNetworkPredictionService_ServerRPC.inl"
+#include "TestFramework/Input/Keyboard.h"
 
 
 JOLTNETSIM_DEVCVAR_SHIPCONST_INT(ToggleLagCompensationDebug, 0, "j.np.DrawLagCompensationDebug", "Toggle Lag Compensation Debug , 1 : Enabled , 0 : Disabled");
@@ -302,6 +303,7 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 			
 			
 			bool bFirstStep = true;
+			UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
 
 			// Do rollback as necessary
 			for (int32 Frame=RollbackFrame; Frame < EndFrame; ++Frame)
@@ -326,6 +328,14 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover Pre-StepRollBack : Frame = %d"), Frame);
 					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
 				}
+
+				if (bFirstStep && Subsystem)
+				{
+					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::RestoreStateForFrame);
+					Subsystem->RestoreStateForFrame(Frame);
+				}
+				
+				
 				for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
 				{
 					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
@@ -341,7 +351,7 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 				//TODO:@GreggoryAddison::CodeCompletion || I will have to manually add decay on inputs that I don't own
 				{
 					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::JoltPhysicsTick_Rollback);
-					if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+					if (Subsystem)
 					{
 						//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Step : Frame = %d"), Frame);
 						const double FixedTimeStep = Step.StepMS * 0.001;

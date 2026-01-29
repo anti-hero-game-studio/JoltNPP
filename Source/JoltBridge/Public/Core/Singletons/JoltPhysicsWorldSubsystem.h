@@ -139,7 +139,7 @@ public:
 	
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
-	void ZeroActorVelocity(AActor* Target);
+	void ZeroActorVelocity(AActor* Target);		
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Get All Overlapping Actors", meta=(DevelopementOnly))
 	TArray<AActor*> GetOverlappingActors(AActor* Target) const;
@@ -185,6 +185,7 @@ public:
 	TArray<int32> LineTraceMulti(const FVector& Start, const FVector& End, const TEnumAsByte<ECollisionChannel> Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
 	
 	int32 SweepTraceSingle(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, FHitResult& OutHit);
+	void DebugTraces(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation) const;
 	TArray<int32> SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
 	FVector GetVelocity(const JPH::BodyID& ID) const;
 

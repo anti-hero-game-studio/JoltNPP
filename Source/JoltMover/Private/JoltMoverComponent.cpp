@@ -489,7 +489,7 @@ void UJoltMoverComponent::FinalizeFrame(const FJoltMoverSyncState* SyncState, co
 
 
 	// Only allow the server to move this component or the client if they are not smoothing. This removes the double call to update the component
-	if (!bIsClientUsingSmoothing || (GetOwner()->HasAuthority() && !GetOwner()->HasLocalNetOwner()) || GetNetMode() == NM_DedicatedServer)
+	if (!bIsClientUsingSmoothing || GetNetMode() == NM_DedicatedServer)
 	{
 		if (PrimaryVisualComponent)
 		{
@@ -714,6 +714,17 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 	SimOutput.AuxState = SimInput.AuxState;
 
 	FJoltCharacterDefaultInputs* Input = SimInput.InputCmd.Collection.FindMutableDataByType<FJoltCharacterDefaultInputs>();
+	
+	if (Input && bIsResimulating && GetOwnerRole() == ROLE_SimulatedProxy && UJoltNetworkPredictionWorldManager::ActiveInstance)
+	{
+		const FJoltNetworkPredictionSettings NetworkPredictionSettings = UJoltNetworkPredictionWorldManager::ActiveInstance->GetSettings();
+		if (NetworkPredictionSettings.SimulatedProxyNetworkLOD == EJoltNetworkLOD::ForwardPredict)
+		{
+			const int DecayKey = CachedNewestSimTickTimeStep.ServerFrame - InTimeStep.ServerFrame;
+			//TODO:@GreggoryAddison::InputDecay || Create a curve that has an input decay amount based on how many frames we've resimmed so far.
+			Input->Decay(0);
+		}
+	}
 	
 	if (Input && !Input->SuggestedMovementMode.IsNone())
 	{

@@ -70,7 +70,7 @@ public:
 	
 	inline static FVector ToUnrealNormal(const JPH::Vec3& Sv)
 	{
-		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY());
+		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY()).GetSafeNormal();
 	}
 
 	inline static FVector ToUnrealPosition(const JPH::RVec3& V, const FVector& WorldOrigin = FVector(0))

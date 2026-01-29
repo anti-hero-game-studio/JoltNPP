@@ -288,45 +288,15 @@ public:
 	UE_API FVector GetAngularVelocityDegrees_WorldSpace() const;
 	UE_API FVector GetAngularVelocityDegrees_BaseSpace() const;
 	
-	UE_API FVector GetLocation_WorldSpace_Quantized() const
-	{
-		const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<100>(GetLocation_BaseSpace());
-		if (MovementBase.IsValid())
-		{
-			return FTransform(MovementBaseQuat, MovementBasePos).TransformPositionNoScale(LocalQ);
-		}
-		return LocalQ;
-	}
+	UE_API FTransform GetTransform_WorldSpace_Quantized() const;
+	
+	UE_API FVector GetLocation_WorldSpace_Quantized() const;
 
-	UE_API FVector GetVelocity_WorldSpace_Quantized() const
-	{
-		const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<10>(GetVelocity_BaseSpace());
-		if (MovementBase.IsValid())
-		{
-			return MovementBaseQuat.RotateVector(LocalQ);
-		}
-		return LocalQ;
-	}
+	UE_API FVector GetVelocity_WorldSpace_Quantized() const;
 
-	UE_API FVector GetAngularVelocityDegrees_WorldSpace_Quantized() const
-	{
-		const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<10>(GetAngularVelocityDegrees_BaseSpace());
-		if (MovementBase.IsValid())
-		{
-			return MovementBaseQuat.RotateVector(LocalQ);
-		}
-		return LocalQ;
-	}
+	UE_API FVector GetAngularVelocityDegrees_WorldSpace_Quantized() const;
 
-	UE_API FRotator GetOrientation_WorldSpace_Quantized() const
-	{
-		const FRotator LocalQ = UE::JoltNetQuant::QuantizeRotatorCompressedShort(GetOrientation_BaseSpace());
-		if (MovementBase.IsValid())
-		{
-			return (MovementBaseQuat * FQuat(LocalQ)).Rotator();
-		}
-		return LocalQ;
-	}
+	UE_API FRotator GetOrientation_WorldSpace_Quantized() const;
 };
 
 template<>
@@ -339,63 +309,6 @@ struct TStructOpsTypeTraits< FJoltUpdatedMotionState > : public TStructOpsTypeTr
 	};
 };
 
-
-// Data block containing basic sync state information
-USTRUCT(BlueprintType)
-struct FJoltMoverTargetSyncState : public FJoltMoverDataStructBase
-{
-	GENERATED_BODY()
-protected:
-	
-	// Linear velocity, units per second, relative to MovementBase if set, world space otherwise.
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Mover)
-	FVector TargetLinearVelocity;
-
-	// Angular velocity, degrees per second, relative to MovementBase if set, world space otherwise.
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Mover)
-	FVector TargetAngularVelocity;
-
-public:
-	
-	FJoltMoverTargetSyncState()
-		: TargetLinearVelocity(ForceInitToZero)
-		, TargetAngularVelocity(ForceInitToZero)
-	{
-	}
-
-	virtual ~FJoltMoverTargetSyncState() {}
-
-	// @return newly allocated copy of this FJoltUpdatedMotionState. Must be overridden by child classes
-	UE_API virtual FJoltMoverDataStructBase* Clone() const override;
-
-	UE_API virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
-
-	virtual UScriptStruct* GetScriptStruct() const override { return StaticStruct(); }
-
-	UE_API virtual void ToString(FAnsiStringBuilderBase& Out) const override;
-
-	UE_API virtual bool ShouldReconcile(const FJoltMoverDataStructBase& AuthorityState) const override;
-
-	UE_API virtual void Interpolate(const FJoltMoverDataStructBase& From, const FJoltMoverDataStructBase& To, float Pct) override;
-	
-	UE_API void UpdateTargetVelocity(const FVector& InTargetLinearVelocity, const FVector& InTargetAngularVelocity);
-	
-	// Queries
-	bool IsNearlyEqual(const FJoltMoverTargetSyncState& Other) const;
-	
-	UE_API FVector GetTargetVelocity_WorldSpace() const {return TargetLinearVelocity;};
-	UE_API FVector GetTargetAngularVelocity_WorldSpace() const { return TargetAngularVelocity; };
-};
-
-template<>
-struct TStructOpsTypeTraits< FJoltMoverTargetSyncState > : public TStructOpsTypeTraitsBase2< FJoltMoverTargetSyncState >
-{
-	enum
-	{
-		WithNetSerializer = true,
-		WithCopy = true
-	};
-};
 
 
 /**

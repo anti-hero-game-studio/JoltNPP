@@ -123,13 +123,9 @@ void UJoltFixedWalkingMode::SimulationTick_Implementation(const FJoltSimulationT
 
 	const FJoltCharacterDefaultInputs* CharacterInputs = StartState.InputCmd.Collection.FindDataByType<FJoltCharacterDefaultInputs>();
 	const FJoltUpdatedMotionState* StartingSyncState = StartState.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
-	const FJoltMoverTargetSyncState* StartingTargetState = StartState.SyncState.Collection.FindDataByType<FJoltMoverTargetSyncState>();
 	check(StartingSyncState);
 
 	FJoltUpdatedMotionState& OutputSyncState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
-	
-	FJoltMoverTargetSyncState& OutputTargetState = OutputState.SyncState.Collection.FindOrAddMutableDataByType<FJoltMoverTargetSyncState>();
-	OutputTargetState = *StartingTargetState;
 
 
 	const float DeltaSeconds = Params.TimeStep.StepMs * 0.001f;
@@ -243,7 +239,7 @@ void UJoltFixedWalkingMode::SimulationTick_Implementation(const FJoltSimulationT
 	TargetVelocity += UpDirection * DeltaUpSpeedCmPerSec;
 
 	// --- 5) Output target velocity and orientation ---
-	OutputTargetState.UpdateTargetVelocity(TargetVelocity, ProposedMove.AngularVelocityDegrees);
+	OutputSyncState.SetLinearAndAngularVelocity_WorldSpace(TargetVelocity, ProposedMove.AngularVelocityDegrees);
 	OutputState.MovementEndState.RemainingMs = 0.0f;
 	OutputState.MovementEndState.NextModeName = Params.StartState.SyncState.MovementMode;
 	OutputSyncState.MoveDirectionIntent = ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector;

@@ -12,6 +12,10 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(JoltMoverDataModelTypes)
 
+// FJoltCharacterDefaultInputs //////////////////////////////////////////////////////////////
+
+#include UE_INLINE_GENERATED_CPP_BY_NAME(JoltMoverDataModelTypes)
+
 void FJoltCharacterDefaultInputs::SetMoveInput(EJoltMoveInputType InMoveInputType, const FVector& InMoveInput)
 {
 	MoveInputType = InMoveInputType;
@@ -247,16 +251,16 @@ bool FJoltUpdatedMotionState::ShouldReconcile(const FJoltMoverDataStructBase& Au
 
 	if (!bIsNearEnough)
 	{
-		UE_LOG(LogJoltMover, Error, TEXT("Client And Server Locations Are Out Of Sync"))
+		/*UE_LOG(LogJoltMover, Error, TEXT("Client And Server Locations Are Out Of Sync"))
 		UE_LOG(LogJoltMover, Error, TEXT("Client Velocity : %s"), *GetLocation_WorldSpace().ToCompactString())
-		UE_LOG(LogJoltMover, Error, TEXT("Server Velocity : %s"), *AuthoritySyncState->GetLocation_WorldSpace().ToCompactString())
+		UE_LOG(LogJoltMover, Error, TEXT("Server Velocity : %s"), *AuthoritySyncState->GetLocation_WorldSpace().ToCompactString())*/
 	}
 	
 	if (!bIsFastEnough)
 	{
-		UE_LOG(LogJoltMover, Error, TEXT("Client And Server Velocity Are Out Of Sync"))
+		/*UE_LOG(LogJoltMover, Error, TEXT("Client And Server Velocity Are Out Of Sync"))
 		UE_LOG(LogJoltMover, Error, TEXT("Client Velocity : %s"), *GetVelocity_WorldSpace().ToCompactString())
-		UE_LOG(LogJoltMover, Error, TEXT("Server Velocity : %s"), *AuthoritySyncState->GetVelocity_WorldSpace().ToCompactString())
+		UE_LOG(LogJoltMover, Error, TEXT("Server Velocity : %s"), *AuthoritySyncState->GetVelocity_WorldSpace().ToCompactString())*/
 	}
 
 	return /*bAreInDifferentSpaces || */!bIsNearEnough || !bIsFastEnough;
@@ -511,60 +515,59 @@ FVector FJoltUpdatedMotionState::GetAngularVelocityDegrees_BaseSpace() const
 	return AngularVelocityDegrees;
 }
 
-// FJoltMoverTargetSyncState ///////////////////////////////////////////////////
-
-FJoltMoverDataStructBase* FJoltMoverTargetSyncState::Clone() const
+FTransform FJoltUpdatedMotionState::GetTransform_WorldSpace_Quantized() const
 {
-	// TODO: ensure that this memory allocation jives with deletion method
-	FJoltMoverTargetSyncState* CopyPtr = new FJoltMoverTargetSyncState(*this);
-	return CopyPtr;
+	const FVector LQuantized = UE::JoltNetQuant::QuantizePackedVector<100>(GetLocation_BaseSpace());
+	const FRotator RQuantized = UE::JoltNetQuant::QuantizeRotatorCompressedShort(GetOrientation_BaseSpace());
+	const FVector BLQuantized = UE::JoltNetQuant::QuantizePackedVector<100>(MovementBasePos);
+	const FRotator BRQuantized = UE::JoltNetQuant::QuantizeRotatorCompressedShort(MovementBaseQuat.Rotator());
+	if (MovementBase.IsValid())
+	{
+		return FTransform(RQuantized, LQuantized) * FTransform(BRQuantized, BLQuantized);
+	}
+
+	return FTransform(RQuantized, LQuantized);
 }
 
-bool FJoltMoverTargetSyncState::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+FVector FJoltUpdatedMotionState::GetLocation_WorldSpace_Quantized() const
 {
-	Super::NetSerialize(Ar, Map, bOutSuccess);
-	SerializePackedVector<10, 16>(TargetLinearVelocity, Ar);
-	SerializePackedVector<10, 16>(TargetAngularVelocity, Ar);
-	
-	bOutSuccess = true;
-	return true;
+	const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<100>(GetLocation_BaseSpace());
+	if (MovementBase.IsValid())
+	{
+		return FTransform(MovementBaseQuat, MovementBasePos).TransformPositionNoScale(LocalQ);
+	}
+	return LocalQ;
 }
 
-void FJoltMoverTargetSyncState::ToString(FAnsiStringBuilderBase& Out) const
+FVector FJoltUpdatedMotionState::GetVelocity_WorldSpace_Quantized() const
 {
-	Super::ToString(Out);
-
-	Out.Appendf("Loc: X=%.2f Y=%.2f Z=%.2f\n", TargetLinearVelocity.X, TargetLinearVelocity.Y, TargetLinearVelocity.Z);
-	Out.Appendf("Intent: X=%.2f Y=%.2f Z=%.2f\n", TargetAngularVelocity.X, TargetAngularVelocity.Y, TargetAngularVelocity.Z);
+	const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<10>(GetVelocity_BaseSpace());
+	if (MovementBase.IsValid())
+	{
+		return MovementBaseQuat.RotateVector(LocalQ);
+	}
+	return LocalQ;
 }
 
-bool FJoltMoverTargetSyncState::ShouldReconcile(const FJoltMoverDataStructBase& AuthorityState) const
+FVector FJoltUpdatedMotionState::GetAngularVelocityDegrees_WorldSpace_Quantized() const
 {
-	return false;
+	const FVector LocalQ = UE::JoltNetQuant::QuantizePackedVector<10>(GetAngularVelocityDegrees_BaseSpace());
+	if (MovementBase.IsValid())
+	{
+		return MovementBaseQuat.RotateVector(LocalQ);
+	}
+	return LocalQ;
 }
 
-void FJoltMoverTargetSyncState::Interpolate(const FJoltMoverDataStructBase& From,
-	const FJoltMoverDataStructBase& To, float Pct)
+FRotator FJoltUpdatedMotionState::GetOrientation_WorldSpace_Quantized() const
 {
-	const FJoltMoverTargetSyncState* FromState = static_cast<const FJoltMoverTargetSyncState*>(&From);
-	const FJoltMoverTargetSyncState* ToState = static_cast<const FJoltMoverTargetSyncState*>(&To);
-	
-	TargetLinearVelocity			= FMath::Lerp(TargetLinearVelocity,		ToState->TargetLinearVelocity, Pct);
-	TargetAngularVelocity = FMath::Lerp(TargetAngularVelocity,		ToState->TargetAngularVelocity, Pct);
+	const FRotator LocalQ = UE::JoltNetQuant::QuantizeRotatorCompressedShort(GetOrientation_BaseSpace());
+	if (MovementBase.IsValid())
+	{
+		return (MovementBaseQuat * FQuat(LocalQ)).Rotator();
+	}
+	return LocalQ;
 }
-
-void FJoltMoverTargetSyncState::UpdateTargetVelocity(const FVector& InTargetLinearVelocity, const FVector& InTargetAngularVelocity)
-{
-	TargetAngularVelocity = UE::JoltNetQuant::QuantizePackedVector<10>(InTargetAngularVelocity);
-	TargetLinearVelocity = UE::JoltNetQuant::QuantizePackedVector<10>(InTargetLinearVelocity);
-}
-
-bool FJoltMoverTargetSyncState::IsNearlyEqual(const FJoltMoverTargetSyncState& Other) const
-{
-	return (TargetLinearVelocity-Other.TargetLinearVelocity).IsNearlyZero() &&
-		(TargetAngularVelocity-Other.TargetAngularVelocity).IsNearlyZero();
-}
-
 
 // UJoltMoverDataModelBlueprintLibrary ///////////////////////////////////////////////////
 
@@ -585,7 +588,7 @@ FVector UJoltMoverDataModelBlueprintLibrary::GetMoveDirectionIntentFromInputs(co
 
 FVector UJoltMoverDataModelBlueprintLibrary::GetLocationFromSyncState(const FJoltUpdatedMotionState& SyncState)
 {
-	return SyncState.GetLocation_WorldSpace();
+	return SyncState.GetLocation_WorldSpace_Quantized();
 }
 
 FVector UJoltMoverDataModelBlueprintLibrary::GetMoveDirectionIntentFromSyncState(const FJoltUpdatedMotionState& SyncState)
@@ -595,15 +598,15 @@ FVector UJoltMoverDataModelBlueprintLibrary::GetMoveDirectionIntentFromSyncState
 
 FVector UJoltMoverDataModelBlueprintLibrary::GetVelocityFromSyncState(const FJoltUpdatedMotionState& SyncState)
 {
-	return SyncState.GetVelocity_WorldSpace();
+	return SyncState.GetVelocity_WorldSpace_Quantized();
 }
 
 FVector UJoltMoverDataModelBlueprintLibrary::GetAngularVelocityDegreesFromSyncState(const FJoltUpdatedMotionState& SyncState)
 {
-	return SyncState.GetAngularVelocityDegrees_WorldSpace();
+	return SyncState.GetAngularVelocityDegrees_WorldSpace_Quantized();
 }
 
 FRotator UJoltMoverDataModelBlueprintLibrary::GetOrientationFromSyncState(const FJoltUpdatedMotionState& SyncState)
 {
-	return SyncState.GetOrientation_WorldSpace();
+	return SyncState.GetOrientation_WorldSpace_Quantized();
 }

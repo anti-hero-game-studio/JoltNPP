@@ -11,6 +11,7 @@
 #include "Misc/DataValidation.h"
 #endif
 
+#include "JoltInputContainerStruct.h"
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(JoltMoverNetworkPredictionLiaison)
@@ -137,12 +138,9 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 		const UPrimitiveComponent* P = MoverComp->GetJoltPhysicsBodyComponent();
 		if (!P) return;
 
-		const FJoltUpdatedMotionState* S = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>(); 
-		const FJoltMoverTargetSyncState* T = SyncState->Collection.FindDataByType<FJoltMoverTargetSyncState>(); 
-		if (S && T)
+		if (const FJoltUpdatedMotionState* S = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>())
 		{
-			Subsystem->RestoreStateForFrame(NextFrameNum);
-			Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace(), S->GetVelocity_WorldSpace(), S->GetAngularVelocityDegrees_WorldSpace());
+			Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace_Quantized(), S->GetVelocity_WorldSpace_Quantized(), S->GetAngularVelocityDegrees_WorldSpace_Quantized());
 		}
 	}
 	
@@ -187,6 +185,25 @@ void UJoltMoverNetworkPredictionLiaisonComponent::SimulationTick(const FJoltNetS
 	StartData.InputCmd  = *SimInput.Cmd;
 	StartData.SyncState = *SimInput.Sync;
 	StartData.AuxState  = *SimInput.Aux;
+	
+	const FJoltNetworkPredictionSettings NetworkPredictionSettings = UJoltNetworkPredictionWorldManager::ActiveInstance->GetSettings();
+	if (MoverComp->GetOwnerRole() == ROLE_SimulatedProxy && NetworkPredictionSettings.SimulatedProxyNetworkLOD == EJoltNetworkLOD::ForwardPredict)
+	{
+		if (StartData.InputCmd.Collection.GetDataArray().Num() == 0)
+		{
+			// Copy the inputs from the sync state to the input command for the sim proxy.
+			if (const FJoltMoverInputContainerDataStruct* InputContainer = static_cast<FJoltMoverInputContainerDataStruct*>(StartData.SyncState.Collection.FindDataByType(FJoltMoverInputContainerDataStruct::StaticStruct())))
+			{
+				for (auto InputStructIt = InputContainer->Collection.GetCollectionDataIterator(); InputStructIt; ++InputStructIt)
+				{
+					if (const FJoltMoverDataStructBase* InputDataStruct = InputStructIt->Get())
+					{
+						StartData.InputCmd.Collection.AddDataByCopy(InputDataStruct);
+					}
+				}
+			}
+		}
+	}
 
 	// Ensure persistent SyncStates are present in the start state for a SimTick.
 	for (const FJoltMoverDataPersistence& PersistentSyncEntry : MoverComp->PersistentSyncStateDataTypes)

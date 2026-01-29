@@ -1228,27 +1228,7 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	
 	const JPH::Shape* CollisionShape = ProcessShapeElement(Shape);
 
-	if (DrawDebugTraces > 0)
-	{
-		if (Shape.IsBox())
-		{
-			DrawDebugBox(GetWorld(), Start, Shape.GetBox(), Rotation, FColor::Magenta, false, DrawDebugTraces);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
-			DrawDebugBox(GetWorld(), End, Shape.GetBox(), Rotation, FColor::Green, false, DrawDebugTraces);
-		}
-		else if (Shape.IsSphere())
-		{
-			DrawDebugSphere(GetWorld(), Start, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
-			DrawDebugSphere(GetWorld(), End, Shape.GetCapsuleRadius(), 12, FColor::Magenta, false, DrawDebugTraces);
-		}
-		else if (Shape.IsCapsule())
-		{
-			DrawDebugCapsule(GetWorld(), Start, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Magenta, false, DrawDebugTraces);
-			DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, DrawDebugTraces);
-			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, DrawDebugTraces);
-		}
-	}
+	DebugTraces(Shape, Start, End, Rotation);
 	
 	
 	FVector FinalEnd = End;
@@ -1335,20 +1315,8 @@ int32 UJoltPhysicsWorldSubsystem::SweepTraceSingle(const FCollisionShape& Shape,
 	return Collector.mBodyID.GetIndex();
 }
 
-TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start,
-	const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel,
-	const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits)
+void UJoltPhysicsWorldSubsystem::DebugTraces(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation) const
 {
-	
-	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltPhysicsWorldSubsystem::SweepTraceMulti);
-	TArray<int32> Results;
-	if (!MainPhysicsSystem) {
-		UE_LOG(LogTemp, Warning, TEXT("UJoltPhysicsWorldSubsystem::RayTestSingle: loaded without a jolt wouldn't work"));
-		return Results;
-	} 
-	
-	const JPH::Shape* CollisionShape = ProcessShapeElement(Shape);
-
 	if (DrawDebugTraces > 0)
 	{
 		if (Shape.IsBox())
@@ -1370,6 +1338,23 @@ TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape&
 			DrawDebugCapsule(GetWorld(), End, Shape.GetCapsuleHalfHeight(), Shape.GetCapsuleRadius(), Rotation, FColor::Green, false, DrawDebugTraces);
 		}
 	}
+}
+
+TArray<int32> UJoltPhysicsWorldSubsystem::SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start,
+                                                          const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel,
+                                                          const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits)
+{
+	
+	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltPhysicsWorldSubsystem::SweepTraceMulti);
+	TArray<int32> Results;
+	if (!MainPhysicsSystem) {
+		UE_LOG(LogTemp, Warning, TEXT("UJoltPhysicsWorldSubsystem::RayTestSingle: loaded without a jolt wouldn't work"));
+		return Results;
+	} 
+	
+	const JPH::Shape* CollisionShape = ProcessShapeElement(Shape);
+
+	DebugTraces(Shape, Start, End, Rotation);
 	
 	
 	FVector FinalEnd = End;
@@ -1476,7 +1461,7 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_Firs
 	UPhysicalMaterial* UEMat = nullptr;
 
 	const FVector HitLocation = JoltHelpers::ToUnrealPosition(Result.mContactPosition, UE_WORLD_ORIGIN);
-	const FVector ImpactNormal = JoltHelpers::ToUnrealVector3(Result.mContactNormal);
+	const FVector ImpactNormal = JoltHelpers::ToUnrealNormal(Result.mContactNormal);
 	const FVector From = JoltHelpers::ToUnrealPosition(Result.mRay.mOrigin, UE_WORLD_ORIGIN);
 	
 	OutHit.bBlockingHit = Result.HasHit();
@@ -1606,7 +1591,7 @@ void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FSweepCastCollector_Al
 		const FJoltUserData* UserData = reinterpret_cast<const FJoltUserData*>(BodyInterface->GetUserData(Hit.mBodyID2));
 		if (!UserData) return;
 		const FVector& HitLocation = JoltHelpers::ToUnrealVector3(Hit.mContactPointOn2);
-		const FVector& ImpactNormal = JoltHelpers::ToUnrealVector3(-Hit.mPenetrationAxis.Normalized());
+		const FVector& ImpactNormal = JoltHelpers::ToUnrealNormal(-Hit.mPenetrationAxis.Normalized());
 		
 		UPhysicalMaterial* UEMat = nullptr;
 	
