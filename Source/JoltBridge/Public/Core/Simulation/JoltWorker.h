@@ -50,6 +50,8 @@ public:
 	void StepPhysicsWithCallBacks();
 
 	void StepPhysics();
+	
+	JPH::TempAllocator* GetAllocator() const { return TempAllocator;}
 
 private:
 	static constexpr uint8 MaxPhysicsFrames = 8;

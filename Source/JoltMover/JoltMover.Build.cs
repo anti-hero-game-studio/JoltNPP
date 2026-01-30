@@ -37,6 +37,7 @@ public class JoltMover : ModuleRules
 				"DeveloperSettings",
 				"PoseSearch",
 				"JoltBridge",
+				"UnrealJoltLibrary"
 			}
 			);
 

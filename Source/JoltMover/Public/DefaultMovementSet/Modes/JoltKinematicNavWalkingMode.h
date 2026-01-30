@@ -11,6 +11,7 @@
 
 #define UE_API JOLTMOVER_API
 
+struct FJoltUpdatedMotionState;
 class UNavJoltMoverComponent;
 class INavigationDataInterface;
 class UJoltCommonLegacyMovementSettings;

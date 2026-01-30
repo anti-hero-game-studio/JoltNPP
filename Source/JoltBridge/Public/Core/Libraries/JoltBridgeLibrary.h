@@ -37,22 +37,22 @@ public:
 		uint32 ResponseMask = 0;
 	};
 	// Sizes, float
-	inline static float ToUnrealFloat(const float& Sz)
+	FORCEINLINE static float ToUnrealFloat(const float& Sz)
 	{
 		return Sz * JOLT_TO_WORLD_SCALE;
 	}
 
-	inline static float ToJoltFloat(const float& Sz)
+	FORCEINLINE static float ToJoltFloat(const float& Sz)
 	{
 		return Sz * WORLD_TO_JOLT_SCALE;
 	}
 
-	inline static JPH::Float3 ToJoltFloat3(const FVector3f& fvector3f)
+	FORCEINLINE static JPH::Float3 ToJoltFloat3(const FVector3f& fvector3f)
 	{
 		return JPH::Float3(fvector3f.X * WORLD_TO_JOLT_SCALE, fvector3f.Z * WORLD_TO_JOLT_SCALE, fvector3f.Y * WORLD_TO_JOLT_SCALE);
 	}
 
-	inline static JPH::Vec3 ToJoltVector3(const FVector& Sv, const bool& adjustScale = true)
+	FORCEINLINE static JPH::Vec3 ToJoltVector3(const FVector& Sv, const bool& adjustScale = true)
 	{
 		if (adjustScale)
 			return JPH::Vec3(Sv.X, Sv.Z, Sv.Y) * WORLD_TO_JOLT_SCALE;
@@ -60,7 +60,7 @@ public:
 		return JPH::Vec3(Sv.X, Sv.Z, Sv.Y);
 	}
 
-	inline static FVector ToUnrealVector3(const JPH::Vec3& Sv, const bool& adjustScale = true)
+	FORCEINLINE static FVector ToUnrealVector3(const JPH::Vec3& Sv, const bool& adjustScale = true)
 	{
 		if (adjustScale)
 			return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY()) * JOLT_TO_WORLD_SCALE;
@@ -68,56 +68,56 @@ public:
 		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY());
 	}
 	
-	inline static FVector ToUnrealNormal(const JPH::Vec3& Sv)
+	FORCEINLINE static FVector ToUnrealNormal(const JPH::Vec3& Sv)
 	{
 		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY()).GetSafeNormal();
 	}
 
-	inline static FVector ToUnrealPosition(const JPH::RVec3& V, const FVector& WorldOrigin = FVector(0))
+	FORCEINLINE static FVector ToUnrealPosition(const JPH::RVec3& V, const FVector& WorldOrigin = FVector(0))
 	{
 
 		return FVector(V.GetX(), V.GetZ(), V.GetY()) * JOLT_TO_WORLD_SCALE + WorldOrigin;
 	}
 
-	inline static JPH::RVec3 ToJoltPosition(const FVector& V, const FVector& WorldOrigin = FVector(0))
+	FORCEINLINE static JPH::RVec3 ToJoltPosition(const FVector& V, const FVector& WorldOrigin = FVector(0))
 	{
 		return JPH::RVec3(V.X - WorldOrigin.X, V.Z - WorldOrigin.Z, V.Y - WorldOrigin.Y) * WORLD_TO_JOLT_SCALE;
 	}
 
-	inline static FQuat ToUnrealRotation(const JPH::Quat& Q)
+	FORCEINLINE static FQuat ToUnrealRotation(const JPH::Quat& Q)
 	{
 		return FQuat(-Q.GetX(), -Q.GetZ(), -Q.GetY(), Q.GetW());
 	}
 
-	inline static JPH::Quat ToJoltRotation(const FQuat& Q)
+	FORCEINLINE static JPH::Quat ToJoltRotation(const FQuat& Q)
 	{
 		return JPH::Quat(-Q.X, -Q.Z, -Q.Y, Q.W);
 	}
 
-	inline static JPH::Quat ToJoltRotation(const FRotator& r)
+	FORCEINLINE static JPH::Quat ToJoltRotation(const FRotator& r)
 	{
 		return ToJoltRotation(r.Quaternion());
 	}
 
 	// Transforms
-	inline static FTransform ToUnrealTransform(const JPH::RMat44& T, const FVector& WorldOrigin = FVector(0))
+	FORCEINLINE static FTransform ToUnrealTransform(const JPH::RMat44& T, const FVector& WorldOrigin = FVector(0))
 	{
 		const FQuat	  Rot = ToUnrealRotation(T.GetQuaternion());
 		const FVector Pos = ToUnrealPosition(T.GetTranslation(), WorldOrigin);
 		return FTransform(Rot, Pos);
 	}
 
-	inline static JPH::RMat44 ToJoltTransform(const FTransform& T)
+	FORCEINLINE static JPH::RMat44 ToJoltTransform(const FTransform& T)
 	{
 		return JPH::RMat44::sRotationTranslation(ToJoltRotation(T.GetRotation()), ToJoltPosition(T.GetTranslation()));
 	}
 
-	inline static FColor ToUnrealColor(const JPH::Color& C)
+	FORCEINLINE static FColor ToUnrealColor(const JPH::Color& C)
 	{
 		return FColor(C.r, C.g, C.b, C.a);
 	}
 
-	inline static void UnrealTrace([[maybe_unused]] const char* inFMT, ...)
+	FORCEINLINE static void UnrealTrace([[maybe_unused]] const char* inFMT, ...)
 	{
 		va_list args;
 		va_start(args, inFMT);
@@ -129,8 +129,23 @@ public:
 
 		UE_LOG(LogJoltBridge, Warning, TEXT("JoltPhysicsSubSystem: %s"), ANSI_TO_TCHAR(buffer));
 	}
+	
+	FORCEINLINE static FVector DegreesPerSecToRadiansPerSec(const FVector& DegPerSec)
+	{
+		return DegPerSec * (PI / 180.f);
+	}
+	
+	FORCEINLINE static FVector RadiansPerSecToDegreesPerSec(const FVector& RadPerSec)
+	{
+		return RadPerSec * (180.f / PI);
+	}
+	
+	FORCEINLINE static FVector RadiansPerSecToDegreesPerSec(const JPH::RVec3& RadPerSec)
+	{
+		return ToUnrealVector3(RadPerSec * (180.f / PI));
+	}
 
-	inline static bool UEAssertFailed(const char* inExpression, const char* inMessage, const char* inFile, uint inLine)
+	FORCEINLINE static bool UEAssertFailed(const char* inExpression, const char* inMessage, const char* inFile, uint inLine)
 	{
 		UE_LOG(LogJoltBridge, Error, TEXT("Assertion failed!"));
 		UE_LOG(LogJoltBridge, Error, TEXT("Expression: %s"), ANSI_TO_TCHAR(inExpression));
@@ -143,7 +158,7 @@ public:
 		return false;
 	}
 
-	inline static void GenerateAssetNames(const UWorld* World, FString& OutPackageName, FString& OutAssetName)
+	FORCEINLINE static void GenerateAssetNames(const UWorld* World, FString& OutPackageName, FString& OutAssetName)
 	{
 		FString LevelName = TEXT("UnknownLevel");
 		if (World)
@@ -156,7 +171,7 @@ public:
 		OutAssetName = FString::Printf(TEXT("BinaryData_%s"), *LevelName);
 	}
 
-	inline static JoltPhysicsMaterial* ToJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat)
+	FORCEINLINE static JoltPhysicsMaterial* ToJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat)
 	{
 		if (!UEPhysicsMat)
 			return nullptr;
@@ -168,7 +183,7 @@ public:
 		return dst;
 	}
 
-	inline static UPhysicalMaterial* ToUEPhysicsMaterial(const JoltPhysicsMaterial* UEPhysicsMat)
+	FORCEINLINE static UPhysicalMaterial* ToUEPhysicsMaterial(const JoltPhysicsMaterial* UEPhysicsMat)
 	{
 		if (!UEPhysicsMat)
 			return nullptr;
@@ -180,7 +195,7 @@ public:
 		return dst;
 	}
 
-	inline static FString EMotionTypeToString(JPH::EMotionType MotionType)
+	FORCEINLINE static FString EMotionTypeToString(JPH::EMotionType MotionType)
 	{
 		switch (MotionType)
 		{
@@ -203,7 +218,7 @@ public:
 		}
 	}
 	
-	static inline void PackDataToGroupIDs(const void* Data, uint32& OutLo, uint32& OutHi)
+	static FORCEINLINE void PackDataToGroupIDs(const void* Data, uint32& OutLo, uint32& OutHi)
 	{
 		const uintptr_t P = reinterpret_cast<uintptr_t>(Data);
 		OutLo = static_cast<uint32>(P & 0xFFFFFFFFu);
@@ -211,7 +226,7 @@ public:
 	}
 
 	template <typename T>
-	static inline T* UnpackDataFromGroupIDs(const uint32 Lo, const uint32 Hi)
+	static FORCEINLINE T* UnpackDataFromGroupIDs(const uint32 Lo, const uint32 Hi)
 	{
 		const uintptr_t P = (static_cast<uintptr_t>(Hi) << 32) | static_cast<uintptr_t>(Lo);
 		return reinterpret_cast<T*>(P);

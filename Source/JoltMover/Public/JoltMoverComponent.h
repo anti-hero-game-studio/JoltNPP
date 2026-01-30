@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
+#include "JoltMoverDataModelTypes.h"
 
 #if UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_4
 #include "CoreMinimal.h"
@@ -152,6 +153,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	JOLTMOVER_API void UnbindProcessGeneratedMovement();
 	
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API virtual void SetLinearVelocity(const FVector Velocity);
+	
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API virtual void SetAngularVelocity(const FVector Velocity);
+	
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API virtual void SetTargetOrientation(const FRotator Rotation);
+	
+	UFUNCTION(BlueprintCallable, Category = Mover)
+	JOLTMOVER_API virtual void SetTargetPosition(const FVector Position);
+	
 	// Callbacks
 	UFUNCTION()
 	virtual void OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) { }
@@ -164,28 +177,28 @@ public:
 	JOLTMOVER_API virtual void ProduceInput(const int32 DeltaTimeMS, FJoltMoverInputCmdContext* Cmd);
 
 	// Restore a previous frame prior to resimulating. Called by backend system. NewBaseTimeStep represents the current time and frame we'll simulate next.
-	JOLTMOVER_API void RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep);
+	JOLTMOVER_API virtual void RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep);
 
 	// Take output for simulation. Called by backend system.
-	JOLTMOVER_API void FinalizeFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState);
+	JOLTMOVER_API virtual void FinalizeFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState);
 
 	// Take output for simulation when no simulation state changes have occurred. Called by backend system.
-	JOLTMOVER_API void FinalizeUnchangedFrame();
+	JOLTMOVER_API virtual void FinalizeUnchangedFrame();
 
 	// Take smoothed simulation state. Called by backend system, if supported.
-	JOLTMOVER_API void FinalizeSmoothingFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState);
+	JOLTMOVER_API virtual void FinalizeSmoothingFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState);
 
 	// This is an opportunity to run code on the code on the simproxy in interpolated mode - currently used to help activate and deactivate modifiers on the simproxy in interpolated mode
-	JOLTMOVER_API void TickInterpolatedSimProxy(const FJoltMoverTimeStep& TimeStep, const FJoltMoverInputCmdContext& InputCmd, UJoltMoverComponent* MoverComp, const FJoltMoverSyncState& CachedSyncState, const FJoltMoverSyncState& SyncState, const FJoltMoverAuxStateContext& AuxState);
+	JOLTMOVER_API virtual void TickInterpolatedSimProxy(const FJoltMoverTimeStep& TimeStep, const FJoltMoverInputCmdContext& InputCmd, UJoltMoverComponent* MoverComp, const FJoltMoverSyncState& CachedSyncState, const FJoltMoverSyncState& SyncState, const FJoltMoverAuxStateContext& AuxState);
 	
 	// Seed initial values based on component's state. Called by backend system.
-	JOLTMOVER_API void InitializeSimulationState(FJoltMoverSyncState* OutSync, FJoltMoverAuxStateContext* OutAux);
+	JOLTMOVER_API virtual void InitializeSimulationState(FJoltMoverSyncState* OutSync, FJoltMoverAuxStateContext* OutAux);
 
 	// Primary movement simulation update. Given an starting state and timestep, produce a new state. Called by backend system.
-	JOLTMOVER_API void SimulationTick(const FJoltMoverTimeStep& InTimeStep, const FJoltMoverTickStartData& SimInput, OUT FJoltMoverTickEndData& SimOutput);
+	JOLTMOVER_API virtual void SimulationTick(const FJoltMoverTimeStep& InTimeStep, const FJoltMoverTickStartData& SimInput, OUT FJoltMoverTickEndData& SimOutput);
 	
 	// Primary movement simulation update. Given an starting state and timestep, produce a new state. Called by backend system.
-	JOLTMOVER_API void PostPhysicsTick(OUT FJoltMoverTickEndData& SimOutput);
+	JOLTMOVER_API virtual void PostPhysicsTick(OUT FJoltMoverTickEndData& SimOutput);
 
 	// Specifies which supporting back end class should drive this Mover actor
 	UPROPERTY(EditDefaultsOnly, Category = Mover, meta = (MustImplement = "/Script/JoltMover.MoverBackendLiaisonInterface"))
@@ -865,6 +878,10 @@ public:
 	// If enabled, we'll accept any movements from an external system in the next simulation state update
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "JoltMover", AdvancedDisplay)
 	uint8 bAcceptExternalMovement : 1 = 0;
+	
+	// Whether to warn when we detect that an external system has moved our object, outside of movement simulation control
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BulletMover", AdvancedDisplay)
+	uint8 bIgnoreVelocityGeneratedByMovementMode : 1 = 0;
 
 	// If enabled, we'll send inputs along with to sim proxy via the sync state, and they'll be available via GetLastInputCmd. This may be useful for cases where input is used to hint at object state, such as an anim graph. This option is intended to be temporary until all networking backends allow this.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "JoltMover", AdvancedDisplay, Experimental)

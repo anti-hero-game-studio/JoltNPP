@@ -4,12 +4,15 @@
 #pragma once
 
 #include "JoltMoverComponent.h"
+#include "JoltBridgeMain.h"	
+#include "JoltCharacter.h"
 #include "DefaultMovementSet/LayeredMoves/JoltMontageStateProvider.h"
 #include "MovementModifiers/JoltStanceModifier.h"
 #include "CharacterJoltMoverComponent.generated.h"
 
 #define UE_API JOLTMOVER_API
 
+class IJoltPrimitiveComponentInterface;
 /**
  * Fires when a stance is changed, if stance handling is enabled (see @SetHandleStanceChanges)
  * Note: If a stance was just Activated it will fire with an invalid OldStance
@@ -98,6 +101,12 @@ public:
 	// Perform uncrouch on actor
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	UE_API virtual void UnCrouch();
+	
+	UE_API virtual void SetLinearVelocity(const FVector Velocity) override;
+	UE_API virtual void SetAngularVelocity(const FVector Velocity) override;
+	UE_API virtual void SetTargetOrientation(const FRotator Rotation) override;
+	UE_API virtual void PostPhysicsTick(FJoltMoverTickEndData& SimOutput) override;
+	UE_API virtual void RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep) override;
 
 	// Broadcast when this actor changes stances.
 	UPROPERTY(BlueprintAssignable, Category = Mover)
@@ -128,6 +137,10 @@ protected:
 	// Whether this component should directly handle stance changes, including crouching input
 	UPROPERTY(EditAnywhere, BlueprintGetter = GetHandleStanceChanges, BlueprintSetter = SetHandleStanceChanges, Category = "Jolt Mover|Character")
 	uint8 bHandleStanceChanges : 1 = 1;
+	
+	// Whether this component should directly handle stance changes, including crouching input
+	UPROPERTY(EditAnywhere, Category = "Jolt Mover|Character")
+	uint8 bUseJoltVirtualCharacter : 1 = 0;
 	
 	UPROPERTY(EditDefaultsOnly, Category="Jolt Mover|Physics Settings|Mass")
 	float DefaultPushStrength = 100.0f;
@@ -163,6 +176,9 @@ protected:
 	UPROPERTY(Transient)
 	FJoltMoverAnimMontageState SyncedMontageState;
 	
+	uint32 CharacterId = 0;
+	JPH::CharacterVirtual* VirtualCharacter = nullptr;
+	
 	
 #pragma region JOLT PHYSICS
 	/* By default, this is true because the virtual shape does not register with the physics scene.
@@ -186,6 +202,8 @@ protected:
 	
 	virtual void InitializeJoltCharacter();
 	virtual void InitializeWithJolt() override;
+	
+	JPH::Ref<JPH::Shape> MakeNextCharacterShape(IJoltPrimitiveComponentInterface* Info);
 	
 public:
 	

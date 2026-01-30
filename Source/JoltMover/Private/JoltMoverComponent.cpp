@@ -5,9 +5,7 @@
 #include "JoltMoverSimulationTypes.h"
 #include "JoltMovementModeStateMachine.h"
 #include "MotionWarpingJoltMoverAdapter.h"
-#include "DefaultMovementSet/Modes/JoltKinematicWalkingMode.h"
 #include "DefaultMovementSet/Modes/JoltKinematicFallingMode.h"
-#include "DefaultMovementSet/Modes/JoltKinematicFlyingMode.h"
 #include "MoveLibrary/JoltMovementMixer.h"
 #include "MoveLibrary/JoltMovementUtils.h"
 #include "MoveLibrary/JoltFloorQueryUtils.h"
@@ -82,7 +80,6 @@ UJoltMoverComponent::UJoltMoverComponent()
 	bAutoActivate = true;
 
 	PersistentSyncStateDataTypes.Add(FJoltMoverDataPersistence(FJoltUpdatedMotionState::StaticStruct(), true));
-	PersistentSyncStateDataTypes.Add(FJoltMoverDataPersistence(FJoltMoverTargetSyncState::StaticStruct(), true));
 
 	BackendClass = UJoltMoverNetworkPredictionLiaisonComponent::StaticClass();
 }
@@ -413,6 +410,30 @@ void UJoltMoverComponent::UnbindProcessGeneratedMovement()
 	ProcessGeneratedMovement.Clear();
 }
 
+void UJoltMoverComponent::SetLinearVelocity(const FVector Velocity)
+{
+	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		S->SetLinearVelocity(JoltPhysicsComponent, Velocity);
+	}
+}
+
+void UJoltMoverComponent::SetAngularVelocity(const FVector Velocity)
+{
+	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		S->SetAngularVelocity(JoltPhysicsComponent, Velocity);
+	}
+}
+
+void UJoltMoverComponent::SetTargetOrientation(const FRotator Rotation)
+{
+}
+
+void UJoltMoverComponent::SetTargetPosition(const FVector Position)
+{
+}
+
 void UJoltMoverComponent::ProduceInput(const int32 DeltaTimeMS, FJoltMoverInputCmdContext* Cmd)
 {
 	Cmd->Collection.Empty();
@@ -452,6 +473,7 @@ void UJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncState, con
 	{
 		SetFrameStateFromContextFromNestedChild(SyncState, AuxState,  true);
 	}
+	
 	OnSimulationRollback(SyncState, AuxState, NewBaseTimeStep);
 }
 
@@ -811,11 +833,16 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 	}
 	
 	// Get our rigid body and apply central impulse
-	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>(); !bIgnoreVelocityGeneratedByMovementMode)
 	{
 		const FJoltUpdatedMotionState* OutState = SimOutput.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
-		if (!OutState) return;
-		Subsystem->ApplyVelocity(GetJoltPhysicsBodyComponent(), OutState->GetVelocity_WorldSpace_Quantized(), OutState->GetAngularVelocityDegrees_WorldSpace_Quantized());
+		if(!OutState) return;
+		
+		SetLinearVelocity(OutState->GetVelocity_WorldSpace_Quantized());
+		SetAngularVelocity(JoltHelpers::DegreesPerSecToRadiansPerSec(OutState->GetAngularVelocityDegrees_WorldSpace_Quantized()));
+		SetTargetOrientation(OutState->GetOrientation_WorldSpace_Quantized());
+		SetTargetPosition(OutState->GetLocation_WorldSpace_Quantized());
+		
 	}
 	
 }
@@ -836,6 +863,8 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		
 		if (!U) return;
 		
+		
+		
 		// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
 		const FVector WorldLocation = T.GetLocation();
 		const FRotator WorldOrientation = T.GetRotation().Rotator();
@@ -843,6 +872,8 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
 		
 		const FTransform NewTransform = U->GetComponentTransform().GetRelativeTransform(UpdatedComponent->GetComponentTransform()).Inverse() * Transform;
+		
+		U->SetWorldTransform(NewTransform);
 		
 		/*const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : Transform = %s"), *MyRole, *T.ToHumanReadableString());

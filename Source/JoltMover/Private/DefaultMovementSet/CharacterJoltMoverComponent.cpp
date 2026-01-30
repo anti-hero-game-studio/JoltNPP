@@ -1,18 +1,17 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "DefaultMovementSet/CharacterJoltMoverComponent.h"
-
 #include "JoltBridgeCoreSettings.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Core/Interfaces/JoltPrimitiveComponentInterface.h"
 #include "Core/Singletons/JoltPhysicsWorldSubsystem.h"
 #include "DefaultMovementSet/InstantMovementEffects/JoltBasicInstantMovementEffects.h"
 #include "DefaultMovementSet/Modes/JoltKinematicFallingMode.h"
 #include "DefaultMovementSet/Modes/JoltKinematicFlyingMode.h"
 #include "DefaultMovementSet/Modes/JoltKinematicWalkingMode.h"
 #include "DefaultMovementSet/Settings/JoltCommonLegacyMovementSettings.h"
-#include "EnvironmentQuery/EnvQueryTest.h"
 #include "MoveLibrary/JoltFloorQueryUtils.h"
 #include "MoveLibrary/JoltMovementUtils.h"
 
@@ -155,6 +154,119 @@ void UCharacterJoltMoverComponent::Crouch()
 void UCharacterJoltMoverComponent::UnCrouch()
 {
 	bWantsToCrouch = false;
+}
+
+void UCharacterJoltMoverComponent::SetLinearVelocity(const FVector Velocity)
+{
+	if (VirtualCharacter)
+	{
+		VirtualCharacter->SetLinearVelocity(JoltHelpers::ToJoltVector3(Velocity));
+		return;
+	}
+	
+	Super::SetLinearVelocity(Velocity);
+	
+}
+
+void UCharacterJoltMoverComponent::SetAngularVelocity(const FVector Velocity)
+{
+	if (!VirtualCharacter)
+	{
+		Super::SetAngularVelocity(Velocity);
+	}
+}
+
+void UCharacterJoltMoverComponent::SetTargetOrientation(const FRotator Rotation)
+{
+	if (VirtualCharacter)
+	{
+		VirtualCharacter->SetRotation(JoltHelpers::ToJoltRotation(Rotation));
+	}
+}
+
+void UCharacterJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
+{
+	if (!bUseJoltVirtualCharacter)
+	{
+		Super::PostPhysicsTick(SimOutput);
+	}
+	else
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::PostPhysicsTick);
+		if (VirtualCharacter)
+		{
+			if (!JoltPhysicsComponent && !UpdatedCompAsPrimitive) return;
+			FJoltUpdatedMotionState& FinalState = SimOutput.SyncState.Collection.FindOrAddMutableDataByType<FJoltUpdatedMotionState>();
+			
+			USceneComponent* U = GetJoltPhysicsBodyComponent();
+		
+			if (!U) return;
+		
+		
+		
+			// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
+			const FVector WorldLocation = JoltHelpers::ToUnrealPosition(VirtualCharacter->GetCenterOfMassPosition());
+			const FRotator WorldOrientation = JoltHelpers::ToUnrealRotation(VirtualCharacter->GetRotation()).Rotator();
+			const FVector V = JoltHelpers::ToUnrealVector3(VirtualCharacter->GetLinearVelocity());
+			const FVector A = FVector::ZeroVector;
+			const FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+		
+			const FTransform NewTransform = U->GetComponentTransform().GetRelativeTransform(UpdatedComponent->GetComponentTransform()).Inverse() * Transform;
+		
+			U->SetWorldTransform(NewTransform);
+		
+			/*const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
+			UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : Transform = %s"), *MyRole, *T.ToHumanReadableString());
+			UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : LinearVelocity = %s"), *MyRole, *V.ToCompactString());
+			UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());*/
+		
+			//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
+			FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, A, nullptr);
+			if (const UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+			{
+				TArray<uint8> Bytes;
+				if (S->GetLastPhysicsState(Bytes))
+				{
+					SimOutput.SyncState.PhysicsSnapshot.SetFromArray(Bytes);
+				}
+				
+			}
+		}
+	}
+}
+
+void UCharacterJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep)
+{
+	/*if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		if (!S->RestoreStateFromBytes(SyncState->PhysicsSnapshot.View(), nullptr))
+		{
+			UE_LOG(LogJoltMover, Error, TEXT("Could NOT restore the physics world from the snapshot provided."))
+		}
+		else
+		{
+			UE_LOG(LogJoltMover, Error, TEXT("Restored the physics world from the snapshot provided."))
+		}
+	}*/
+	
+	/*if (const FJoltUpdatedMotionState* MoverState = const_cast<FJoltUpdatedMotionState*>(LastMoverDefaultSyncState))
+	{
+		// Update the physics state to the authoritative state since our client sided state is wrong.
+		const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
+		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
+		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
+		
+		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+
+		if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+		{
+			S->RestoreCharacterState(CharacterId, Transform, WorldVelocity);
+		}
+		
+	}
+	*/
+	
+	Super::RestoreFrame(SyncState, AuxState, NewBaseTimeStep);
 }
 
 void UCharacterJoltMoverComponent::OnMoverPreSimulationTick(const FJoltMoverTimeStep& TimeStep, const FJoltMoverInputCmdContext& InputCmd)
@@ -319,26 +431,74 @@ void UCharacterJoltMoverComponent::InitializeJoltCharacter()
 		UE_LOG(LogJoltMover, Error, TEXT("Could not find the Physics World Subsystem"))
 		return;
 	}
-	
-	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
-	{
-		// TODO:@GreggoryAddison::CodeCompletion || Add support for kinematic mover
-		S->RegisterJoltRigidBody(GetOwner());
 
-		if (UpdatedCompAsPrimitive)
+	if (bUseJoltVirtualCharacter)
+	{
+		if (!GetJoltPhysicsBodyComponent()) return;
+	
+		IJoltPrimitiveComponentInterface* I = Cast<IJoltPrimitiveComponentInterface>(GetJoltPhysicsBodyComponent());
+	
+		JPH::CharacterVirtualSettings Settings;
+		Settings.mUp = JPH::Vec3::sAxisZ();
+		Settings.mSupportingVolume = JPH::Plane(Settings.mUp, JoltHelpers::ToJoltFloat(-I->GetShapeHeight())); // should use the half cylinder height instead of the radius
+		Settings.mShape = Subsystem->GetCapsuleCollisionShape(I->GetShapeHeight(), I->GetShapeWidth());
+		Settings.mMass = I->GetJoltPhysicsBodySettings().Mass;
+		Settings.mMaxStrength = DefaultPushStrength;
+		if (bNeedsJoltRigidBodyShape)
 		{
-			const float GravityFactor = FMath::Abs(S->GetJoltSettings()->WorldGravityAcceleration.Length() / GetGravityAcceleration().Length());
-			S->SetGravityFactor(UpdatedCompAsPrimitive, 0);
+			Settings.mInnerBodyShape = Subsystem->GetCapsuleCollisionShape(I->GetShapeHeight(), I->GetShapeWidth());
 		}
-		
+		Settings.mCharacterPadding = CharacterPadding;
+		Settings.mMaxNumHits = MaxConcurrentCollisions;
+		Settings.mPredictiveContactDistance = PredictiveContactQueryDistance;
+		Settings.mCollisionTolerance = CollisionTolerance;
+		Settings.mPenetrationRecoverySpeed = PenetrationRecoverySpeed;
+
+		Subsystem->RegisterJoltCharacter(Cast<APawn>(GetOwner()), Settings, CharacterId);
+	
+		VirtualCharacter = Subsystem->GetCharacterFromId(CharacterId);
 	}
+	else
+	{
+		if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+		{
+			S->RegisterJoltRigidBody(GetOwner());
+
+			if (UpdatedCompAsPrimitive)
+			{
+				const float GravityFactor = FMath::Abs(S->GetJoltSettings()->WorldGravityAcceleration.Length() / GetGravityAcceleration().Length());
+				S->SetGravityFactor(UpdatedCompAsPrimitive, 0);
+			}
+		
+		}
+	}
+	
+	
 	
 }
 
 void UCharacterJoltMoverComponent::InitializeWithJolt()
 {
+	JPH::RegisterDefaultAllocator();
 	Super::InitializeWithJolt();
 	InitializeJoltCharacter();
+}
+
+
+JPH::Ref<JPH::Shape> UCharacterJoltMoverComponent::MakeNextCharacterShape(IJoltPrimitiveComponentInterface* Info)
+{
+	const float fTotalCapsuleHeight = Info->GetShapeHeight() + 2.0f * Info->GetShapeWidth();
+
+	JPH::CapsuleShapeSettings opt;
+	opt.mRadius = Info->GetShapeWidth();
+	opt.mHalfHeightOfCylinder = 0.5f * Info->GetShapeHeight();
+
+	JPH::RotatedTranslatedShapeSettings up;
+	up.mInnerShapePtr = opt.Create().Get();
+	up.mPosition = JPH::Vec3(0, 0, fTotalCapsuleHeight * 0.5f);
+	up.mRotation = JPH::Quat::sFromTo(JPH::Vec3::sAxisY(), JPH::Vec3::sAxisZ());
+
+	return up.Create().Get();
 }
 
 #pragma endregion

@@ -4,6 +4,7 @@
 
 #include "JoltMovementMode.h"
 #include "JoltKinematicFallingMode.h"
+#include "JoltMoverDataModelTypes.h"
 #include "JoltAsyncFallingMode.generated.h"
 
 #define UE_API JOLTMOVER_API

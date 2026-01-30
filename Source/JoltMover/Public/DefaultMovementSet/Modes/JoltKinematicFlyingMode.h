@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "JoltMovementMode.h"
+#include "JoltMoverDataModelTypes.h"
 #include "JoltKinematicFlyingMode.generated.h"
 
 #define UE_API JOLTMOVER_API

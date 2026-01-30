@@ -1,33 +1,34 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "JoltMovementMode.h"
-#include "JoltMoverDataModelTypes.h"
-#include "MoveLibrary/JoltBasedMovementUtils.h"
-#include "JoltKinematicFallingMode.generated.h"
+#include "JoltPhysicsCharacterMovementMode.h"
+#include "DefaultMovementSet/Modes/JoltKinematicFallingMode.h"
+#include "JoltSimplePhysicsFallingMode.generated.h"
 
 #define UE_API JOLTMOVER_API
 
 class UJoltCommonLegacyMovementSettings;
 struct FJoltFloorCheckResult;
 
-// Fired after the actor lands on a valid surface. First param is the name of the mode this actor is in after landing. Second param is the hit result from hitting the floor.
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FJoltMover_OnLanded, const FName&, NextMovementModeName, const FHitResult&, HitResult);
-
 /**
- * FallingMode: a default movement mode for moving through the air and jumping, typically influenced by gravity and air control
+ * AsyncFallingMode: a default movement mode for moving through the air and jumping, typically influenced by gravity and air control
+ * This mode simulates movement without actually modifying any scene component(s).
  */
-UCLASS(MinimalAPI, Blueprintable, BlueprintType)
-class UJoltKinematicFallingMode : public UJoltBaseMovementMode
+UCLASS(MinimalAPI, Blueprintable, BlueprintType, Experimental)
+class UJoltSimplePhysicsFallingMode : public UJoltPhysicsCharacterMovementMode
 {
-	GENERATED_UCLASS_BODY()
-
+	GENERATED_BODY()
 
 public:
-	UE_API virtual void GenerateMove_Implementation(const FJoltMoverTickStartData& StartState, const FJoltMoverTimeStep& TimeStep, FJoltProposedMove& OutProposedMove) const override;
+	
+	UE_API UJoltSimplePhysicsFallingMode(const FObjectInitializer& ObjectInitializer);
 
+	UE_API virtual void OnRegistered(const FName ModeName) override;
+    UE_API virtual void OnUnregistered() override;
+	UE_API virtual void GenerateMove_Implementation(const FJoltMoverTickStartData& StartState, const FJoltMoverTimeStep& TimeStep, FJoltProposedMove& OutProposedMove) const override;
 	UE_API virtual void SimulationTick_Implementation(const FJoltSimulationTickParams& Params, FJoltMoverTickEndData& OutputState) override;
 
 	// Broadcast when this actor lands on a valid surface.
@@ -54,15 +55,6 @@ public:
  	 */
 	UPROPERTY(Category=Mover, EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ForceUnits = "cm/s^2"))
 	float FallingDeceleration;
-
-	/**
-	 * Friction to apply to air movement.
-	 * Lateral velocity is scaled each tick by a factor (1-Friction * TimeStep) so friction
-	 * values greater than 1/TimeStep will result in all lateral velocity being removed.
-	 * Note: This is NOT applied to vertical velocity, only movement plane velocity
-	 */
-	UPROPERTY(Category = Mover, EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0"))
-	float FallingLateralFriction;
 
 	/**
      * Deceleration to apply to air movement when falling faster than terminal velocity
@@ -100,13 +92,10 @@ protected:
 	 */
 	UFUNCTION(BlueprintCallable, Category=Mover)
 	UE_API virtual void ProcessLanded(const FJoltFloorCheckResult& FloorResult, FVector& Velocity, FJoltRelativeBaseInfo& BaseInfo, FJoltMoverTickEndData& TickEndData) const;
-	
-	UE_API virtual void OnRegistered(const FName ModeName) override;
-	UE_API virtual void OnUnregistered() override;
 
-	UE_API void CaptureFinalState(USceneComponent* UpdatedComponent, const FJoltUpdatedMotionState& StartSyncState, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const;
+	UE_API void CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector& FinalLocation, const FRotator& FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const;
 
-	TObjectPtr<const UJoltCommonLegacyMovementSettings> CommonLegacySettings;
+	TWeakObjectPtr<const UJoltCommonLegacyMovementSettings> CommonLegacySettings;
 };
 
 #undef UE_API

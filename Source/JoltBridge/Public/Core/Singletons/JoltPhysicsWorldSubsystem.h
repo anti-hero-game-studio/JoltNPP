@@ -6,6 +6,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Core/Libraries/JoltBridgeLibrary.h"
 #include "JoltBridgeMain.h"
+#include "JoltCharacter.h"
 #include <functional>
 #include "Core/CollisionFilters/JoltFilters.h"
 #include "Core/DataTypes/JoltBridgeTypes.h"
@@ -16,6 +17,7 @@ class FUnrealGroupFilter;
 
 namespace JPH
 {
+	class CharacterVirtual;
 	class PhysicsSystem;
 	class StateRecorderFilter;
 }
@@ -104,8 +106,9 @@ public:
 	 * @param Target	The actor with primitive components that will be converted to rigid shapes. ACTOR SCALE MUST BE {1,1,1}
 	 * @return	Returns the id to use in collision lookups
 	 */
-	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Register Dynamic Rigid Body", meta=(AutoCreateRefTerm = "Options"))
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Register Dynamic Rigid Body")
 	void RegisterJoltRigidBody(AActor* Target);
+	
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects", DisplayName="Set Physics State")
 	void K2_SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity);
@@ -117,6 +120,9 @@ public:
 	void StepPhysics(float FixedTimeStep = 0.016666667f);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void StepVirtualCharacters(float FixedTimeStep = 0.016666667f);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void AddImpulse(AActor* Target, const FVector Impulse);
 
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
@@ -126,7 +132,13 @@ public:
 	void SetGravityFactor(const UPrimitiveComponent* Target, const float GravityFactor);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
-	void SetAngularVelocity(AActor* Target, const FVector AngularVelocity);
+	void SetLinearVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void RestoreCharacterState(const int32 Id, const FTransform Transform, const FVector LinearVelocity);
+	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
+	void SetAngularVelocity(const UPrimitiveComponent* Target, const FVector AngularVelocity);
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void ApplyVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity, const FVector AngularVelocity);
@@ -136,7 +148,6 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void SleepBody(const UPrimitiveComponent* Target);
-	
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects")
 	void ZeroActorVelocity(AActor* Target);		
@@ -188,6 +199,7 @@ public:
 	void DebugTraces(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation) const;
 	TArray<int32> SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
 	FVector GetVelocity(const JPH::BodyID& ID) const;
+	JPH::PhysicsSystem* GetPhysicsSystem() const {return MainPhysicsSystem;}
 
 private:
 	
@@ -240,6 +252,7 @@ private:
 	TArray<JPH::Body*> SavedBodies;
 
 	TMap<uint32, JPH::Body*> BodyIDBodyMap;
+	TMap<uint32, JPH::CharacterVirtual*> VirtualCharacterMap;
 
 	// JPH::Array<const JPH::Body*> HeightMapArray;
 
@@ -248,8 +261,6 @@ private:
 	TMap<EPhysicalSurface, const JoltPhysicsMaterial*> SurfaceJoltMaterialMap;
 
 	TMap<EPhysicalSurface, TWeakObjectPtr<const UPhysicalMaterial>> SurfaceUEMaterialMap;
-
-	TMap<const JPH::BodyID*, TWeakObjectPtr<AActor>> DynamicBodyIDActorMap;
 
 	TMap<const JPH::BodyID*, FTransform> SkeletalMeshBodyIDLocalTransformMap;
 
@@ -365,6 +376,10 @@ public:
 	static const FJoltUserData* GetUserData(const uint64& UserDataPtr);
 	const UJoltSettings* GetJoltSettings() const {return JoltSettings;};
 	
+	void RegisterJoltCharacter(const APawn* Target, const JPH::CharacterVirtualSettings& Settings, uint32& CharacterId);
+	
+	JPH::CharacterVirtual* GetCharacterFromId(const uint32& CharacterId) const;
+	
 	
 	
 	FOnModifyContacts OnModifyContacts;
@@ -404,10 +419,14 @@ public:
 
 	// Restore snapshot for a specific command frame. Returns false if the snapshot is missing/stale.
 	bool RestoreStateForFrame(int32 CommandFrame);
+	
+	bool RestoreStateFromBytes(TArrayView<const uint8> SnapshotBytes, const JPH::StateRecorderFilter* RestoreFilter);
 
 	// Optional utilities
 	bool HasStateForFrame(int32 CommandFrame) const;
 	int32 GetSnapshotHistoryCapacity() const { return SnapshotHistory.Num(); }
+	
+	bool GetLastPhysicsState(TArray<uint8>& OutBytes) const;
 
 private:
 	// Convert frame -> slot index

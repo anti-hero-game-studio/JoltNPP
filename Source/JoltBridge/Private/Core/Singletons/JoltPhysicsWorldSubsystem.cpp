@@ -232,6 +232,27 @@ void UJoltPhysicsWorldSubsystem::RegisterJoltRigidBody(AActor* Target)
 	}, Descriptor);
 }
 
+void UJoltPhysicsWorldSubsystem::RegisterJoltCharacter(const APawn* Target, const JPH::CharacterVirtualSettings& Settings, uint32& CharacterId)
+{
+	if (!Target) return;
+	const FTransform ownTrans = Target->GetTransform();
+	JPH::CharacterVirtual* m_pCharacter = new JPH::CharacterVirtual(&Settings, JoltHelpers::ToJoltPosition(ownTrans.GetLocation()),JoltHelpers::ToJoltRotation(ownTrans.GetRotation()), MainPhysicsSystem);
+	m_pCharacter->AddRef();
+	
+	CharacterId = m_pCharacter->GetID().GetValue();
+	VirtualCharacterMap.Add(m_pCharacter->GetID().GetValue(), m_pCharacter);
+}
+
+JPH::CharacterVirtual* UJoltPhysicsWorldSubsystem::GetCharacterFromId(const uint32& CharacterId) const
+{
+	if (VirtualCharacterMap.Contains(CharacterId))
+	{
+		return VirtualCharacterMap[CharacterId];
+	}
+	
+	return nullptr;
+}
+
 void UJoltPhysicsWorldSubsystem::K2_SetPhysicsState(const UPrimitiveComponent* Target, const FTransform& Transforms, const FVector& Velocity, const FVector& AngularVelocity)
 {
 	SetPhysicsState(Target, Transforms, Velocity, AngularVelocity);
@@ -680,7 +701,7 @@ JPH::BodyCreationSettings UJoltPhysicsWorldSubsystem::MakeBodyCreationSettings(c
 		JPH::MassProperties msp;
 		msp.ScaleToMass(Options.Mass);
 		ShapeSettings.mMassPropertiesOverride = msp;
-		ShapeSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
+		ShapeSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
 		
 		if (Options.bKeepShapeVertical)
 		{
@@ -899,6 +920,19 @@ void UJoltPhysicsWorldSubsystem::StepPhysics(float FixedTimeStep)
 	}
 }
 
+void UJoltPhysicsWorldSubsystem::StepVirtualCharacters(float FixedTimeStep)
+{
+	for (TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
+	{
+		JPH::CharacterVirtual::ExtendedUpdateSettings update_settings;
+		C.Value->ExtendedUpdate(FixedTimeStep, MainPhysicsSystem->GetGravity(), update_settings, MainPhysicsSystem->GetDefaultBroadPhaseLayerFilter(Layers::MOVING),
+				MainPhysicsSystem->GetDefaultLayerFilter(Layers::MOVING),
+				{ },
+				{ },
+				*JoltWorker->GetAllocator());
+	}
+}
+
 void UJoltPhysicsWorldSubsystem::AddImpulse(AActor* Target, const FVector Impulse)
 {
 	int32 Id = INDEX_NONE;
@@ -931,16 +965,36 @@ void UJoltPhysicsWorldSubsystem::SetGravityFactor(const UPrimitiveComponent* Tar
 	BodyInterface->SetGravityFactor(ID, GravityFactor);
 }
 
-
-void UJoltPhysicsWorldSubsystem::SetAngularVelocity(AActor* Target, const FVector AngularVelocity)
+void UJoltPhysicsWorldSubsystem::SetLinearVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity)
 {
-	int32 Id = INDEX_NONE;
-	const FUnrealShapeDescriptor& Descriptor = GetShapeDescriptorData(Target);
-	Id = Descriptor.GetRootColliderId();
+	const int32 Id = FindShapeId(Target);
 	
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
-	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
+	BodyInterface->SetLinearVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));
+}
+
+void UJoltPhysicsWorldSubsystem::RestoreCharacterState(const int32 Id, const FTransform Transform, const FVector LinearVelocity)
+{
+	if (!VirtualCharacterMap.Contains(Id)) return;
+	
+	JPH::CharacterVirtual* C = VirtualCharacterMap[Id];
+	
+	if (!C) return;
+	
+	C->SetLinearVelocity(JoltHelpers::ToJoltVector3(LinearVelocity));
+	C->SetRotation(JoltHelpers::ToJoltRotation(Transform.GetRotation()));
+	C->SetPosition(JoltHelpers::ToJoltVector3(Transform.GetTranslation()));
+}
+
+
+void UJoltPhysicsWorldSubsystem::SetAngularVelocity(const UPrimitiveComponent* Target, const FVector AngularVelocity)
+{
+	const int32 Id = FindShapeId(Target);
+	
+	if (Id == INDEX_NONE) return;
+	JPH::BodyID JoltBodyId(Id);
+	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity)));
 }
 
 void UJoltPhysicsWorldSubsystem::ApplyVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity, const FVector AngularVelocity)
@@ -948,8 +1002,11 @@ void UJoltPhysicsWorldSubsystem::ApplyVelocity(const UPrimitiveComponent* Target
 	const int32 Id = FindShapeId(Target);
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
-	BodyInterface->SetLinearAndAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity), JoltHelpers::ToJoltVector3(AngularVelocity));
-	//BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocity));
+	
+	const FVector AngularVelocityRadPerSec = JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity);
+	//BodyInterface->SetLinearAndAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity), JoltHelpers::ToJoltVector3(AngularVelocityRadPerSec));
+	BodyInterface->SetLinearVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));
+	//BodyInterface->AddAngularImpulse(JoltBodyId, JoltHelpers::ToJoltVector3(AngularVelocityRadPerSec));
 }
 
 void UJoltPhysicsWorldSubsystem::WakeBody(const UPrimitiveComponent* Target)
@@ -1644,9 +1701,9 @@ void UJoltPhysicsWorldSubsystem::AddAllJoltActors(const UWorld* World)
 		for (UPrimitiveComponent* Comp : Components)
 		{
 			if (!Comp) continue;
-			if (Comp->Implements<UJoltPrimitiveComponentInterface>())
+			if (IJoltPrimitiveComponentInterface* I = Cast<IJoltPrimitiveComponentInterface>(Comp))
 			{
-				bShouldRegister = true;
+				bShouldRegister = I->GetJoltPhysicsBodySettings().bAutomaticallyRegisterWithJolt;
 				break;
 			}
 		}
@@ -2100,6 +2157,16 @@ void UJoltPhysicsWorldSubsystem::EnsureSnapshotHistoryReady()
 	}
 }
 
+
+
+bool UJoltPhysicsWorldSubsystem::GetLastPhysicsState(TArray<uint8>& OutBytes) const
+{
+	if (SnapshotHistory.Num() == 0) return false;
+	
+	OutBytes = SnapshotHistory.Last().Bytes;
+	return true;
+}
+
 int32 UJoltPhysicsWorldSubsystem::FrameToSlotIndex(const int32 CommandFrame) const
 {
 	// NOTE: CommandFrame should be >= 0. If you use negative sentinel frames, handle them outside.
@@ -2139,6 +2206,11 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 	// If you later decide to include constraints, broaden EStateRecorderState accordingly.
 	MainPhysicsSystem->SaveState(Recorder, JPH::EStateRecorderState::Bodies, SaveFilter);
 
+	for (const TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
+	{
+		C.Value->SaveState(Recorder);
+	}
+
 	const std::string Data = Recorder.GetData();
 
 	// Overwrite (do NOT append). This keeps memory bounded.
@@ -2150,7 +2222,7 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 	}
 }
 
-bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(int32 CommandFrame)
+bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(const int32 CommandFrame)
 {
 	EnsureSnapshotHistoryReady();
 
@@ -2176,7 +2248,30 @@ bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(int32 CommandFrame)
 	Recorder.WriteBytes(Slot.Bytes.GetData(), Slot.Bytes.Num());
 
 	MainPhysicsSystem->RestoreState(Recorder);
+	for (const TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
+	{
+		C.Value->RestoreState(Recorder);
+	}
 	return true;
+}
+
+bool UJoltPhysicsWorldSubsystem::RestoreStateFromBytes(TArrayView<const uint8> SnapshotBytes, const JPH::StateRecorderFilter* RestoreFilter)
+{
+	check(MainPhysicsSystem);
+
+	JPH::StateRecorderImpl Reader;
+	Reader.WriteBytes(SnapshotBytes.GetData(), SnapshotBytes.Num());
+
+	// Must match what you saved: Bodies (and any other categories you saved)
+	MainPhysicsSystem->RestoreState(Reader, RestoreFilter);
+
+	// Restore your virtual characters too (must match SaveState)
+	for (const TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
+	{
+		C.Value->RestoreState(Reader);
+	}
+	
+	return !Reader.IsFailed();
 }
 
 bool UJoltPhysicsWorldSubsystem::HasStateForFrame(int32 CommandFrame) const

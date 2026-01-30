@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "JoltMovementMode.h"
+#include "JoltMoverDataModelTypes.h"
 
 #include "JoltKinematicSwimmingMode.generated.h"
 

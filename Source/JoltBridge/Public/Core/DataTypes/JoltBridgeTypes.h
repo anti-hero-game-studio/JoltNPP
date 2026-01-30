@@ -6,6 +6,7 @@
 #include "JoltBridgeTypes.generated.h"
 
 
+
 USTRUCT()
 struct FUnrealShape
 {
@@ -194,6 +195,9 @@ struct FJoltPhysicsBodySettings
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	EJoltShapeType ShapeType = EJoltShapeType::STATIC;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bAutomaticallyRegisterWithJolt = true;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	bool bAutomaticallyActivate = false;

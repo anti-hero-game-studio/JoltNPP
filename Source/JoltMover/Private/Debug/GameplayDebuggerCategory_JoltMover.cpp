@@ -7,6 +7,7 @@
 #include "GameFramework/Pawn.h"
 #include "Components/PrimitiveComponent.h"
 #include "DrawDebugHelpers.h"
+#include "JoltMoverDataModelTypes.h"
 #include "Debug/JoltMoverDebugComponent.h"
 
 

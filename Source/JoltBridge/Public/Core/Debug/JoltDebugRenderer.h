@@ -48,6 +48,8 @@ public:
 		DrawDebugLine(World, V2, V3, Color, false, -1, 0, 1);
 		DrawDebugLine(World, V3, V1, Color, false, -1, 0, 1);
 	}
+	
+	
 
 	virtual void DrawText3D(JPH::RVec3Arg inPosition, const JPH::string_view& inString, JPH::ColorArg inColor, float inHeight) override
 	{

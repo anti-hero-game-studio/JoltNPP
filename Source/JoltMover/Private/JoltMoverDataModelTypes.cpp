@@ -12,9 +12,6 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(JoltMoverDataModelTypes)
 
-// FJoltCharacterDefaultInputs //////////////////////////////////////////////////////////////
-
-#include UE_INLINE_GENERATED_CPP_BY_NAME(JoltMoverDataModelTypes)
 
 void FJoltCharacterDefaultInputs::SetMoveInput(EJoltMoveInputType InMoveInputType, const FVector& InMoveInput)
 {
