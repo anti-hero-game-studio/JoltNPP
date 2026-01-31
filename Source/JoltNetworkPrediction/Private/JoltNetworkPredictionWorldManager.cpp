@@ -332,7 +332,7 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 				if (bFirstStep && Subsystem)
 				{
 					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::RestoreStateForFrame);
-					Subsystem->RestoreStateForFrame(Frame);
+					Subsystem->RestoreStateForFrame(ServiceStep.LocalOutputFrame);
 				}
 				
 				
@@ -355,8 +355,9 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 					{
 						//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Step : Frame = %d"), Frame);
 						const double FixedTimeStep = Step.StepMS * 0.001;
+						Subsystem->StepVirtualCharacters(FixedTimeStep);
 						Subsystem->StepPhysics(FixedTimeStep);
-						Subsystem->SaveStateForFrame(Frame);
+						Subsystem->SaveStateForFrame(ServiceStep.LocalOutputFrame);
 					}
 				}
 				
@@ -493,8 +494,9 @@ void UJoltNetworkPredictionWorldManager::BeginNewSimulationFrame_Internal(float 
 					{
 						//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("[MSL] Time | DeltaTime = %f | Frame = %d"), DeltaTimeSeconds, Step.Frame);
 						const double FixedTimeStep = Step.StepMS * 0.001;
+						Subsystem->StepVirtualCharacters(FixedTimeStep);
 						Subsystem->StepPhysics(FixedTimeStep);
-						Subsystem->SaveStateForFrame(Step.Frame);
+						Subsystem->SaveStateForFrame(ServiceStep.LocalOutputFrame);
 					}
 				
 				}

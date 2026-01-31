@@ -807,7 +807,10 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 		UpdateBasedMovementScheduling(SimOutput);
 	}
 
-	OnPostSimulationTick.Broadcast(MoverTimeStep);
+	if (OnPostSimulationTick.IsBound())
+	{
+		OnPostSimulationTick.Broadcast(MoverTimeStep);
+	}
 
 	CachedLastSimTickTimeStep = MoverTimeStep;
 
@@ -881,7 +884,7 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());*/
 		
 		//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
-		FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, A, nullptr);
+		FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, JoltHelpers::RadiansPerSecToDegreesPerSec(A), nullptr);
 	}
 }
 

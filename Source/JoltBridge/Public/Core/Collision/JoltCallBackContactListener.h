@@ -79,6 +79,12 @@ public:
 	{
 		return RemovedContactQueue.Dequeue(OutItem);
 	}
+	
+	void ClearContactCache()
+	{
+		AddedContactQueue.Empty();
+		RemovedContactQueue.Empty();
+	}
 
 	TQueue<FContactAddedInfo, EQueueMode::Mpsc>* GetContactQueue() { return &AddedContactQueue; };
 

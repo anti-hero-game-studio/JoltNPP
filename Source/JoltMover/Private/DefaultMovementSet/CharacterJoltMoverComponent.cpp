@@ -222,15 +222,6 @@ void UCharacterJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOut
 		
 			//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
 			FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, A, nullptr);
-			if (const UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
-			{
-				TArray<uint8> Bytes;
-				if (S->GetLastPhysicsState(Bytes))
-				{
-					SimOutput.SyncState.PhysicsSnapshot.SetFromArray(Bytes);
-				}
-				
-			}
 		}
 	}
 }

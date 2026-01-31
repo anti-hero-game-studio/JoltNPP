@@ -419,8 +419,14 @@ void UJoltPhysicsWorldSubsystem::CleanUpJoltBridgeWorld()
 		MainPhysicsSystem->GetBodyInterfaceNoLock().RemoveBody(Ids[i]);
 		MainPhysicsSystem->GetBodyInterface().DestroyBody(Ids[i]);
 	}
+
+	for (TTuple<unsigned, JPH::CharacterVirtual*> C : VirtualCharacterMap)
+	{
+		delete C.Value;
+	}
 	
-	
+	VirtualCharacterMap.Empty();
+	JPH::CharacterID::sSetNextCharacterID();
 	
 	// delete collision Shapes
 	for (int i = 0; i < BoxShapes.Num(); i++)
@@ -753,13 +759,14 @@ void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Targ
 	if (ShapeId == INDEX_NONE) return;
 	
 	const JPH::BodyID ID(ShapeId);
+	
 	BodyInterface->SetPositionRotationAndVelocity
 	(
 		ID, 
 		JoltHelpers::ToJoltPosition(Transforms.GetLocation()),
 		JoltHelpers::ToJoltRotation(Transforms.GetRotation()), 
 		JoltHelpers::ToJoltVector3(Velocity),
-		JoltHelpers::ToJoltVector3(AngularVelocity)
+		JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity))
 	);
 }
 
@@ -2232,6 +2239,13 @@ bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(const int32 CommandFrame)
 	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
 	const FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
 
+	if (ContactListener)
+	{	
+		ContactListener->ClearContactCache();
+	}
+	
+	
+
 	// Validate that this slot still represents the requested frame
 	if (Slot.Frame != CommandFrame)
 	{
@@ -2252,6 +2266,7 @@ bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(const int32 CommandFrame)
 	{
 		C.Value->RestoreState(Recorder);
 	}
+	
 	return true;
 }
 
