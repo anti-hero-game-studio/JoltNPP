@@ -1,6 +1,7 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "DefaultMovementSet/CharacterJoltMoverComponent.h"
+#include "JoltBridgeMain.h"
 #include "JoltBridgeCoreSettings.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -184,11 +185,11 @@ void UCharacterJoltMoverComponent::SetTargetOrientation(const FRotator Rotation)
 	}
 }
 
-void UCharacterJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
+void UCharacterJoltMoverComponent::PostPhysicsTick(const FJoltMoverTimeStep& TimeStep, FJoltMoverTickEndData& SimOutput)
 {
 	if (!bUseJoltVirtualCharacter)
 	{
-		Super::PostPhysicsTick(SimOutput);
+		Super::PostPhysicsTick(TimeStep, SimOutput);
 	}
 	else
 	{
@@ -239,23 +240,62 @@ void UCharacterJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncS
 			UE_LOG(LogJoltMover, Error, TEXT("Restored the physics world from the snapshot provided."))
 		}
 	}*/
-	
-	/*if (const FJoltUpdatedMotionState* MoverState = const_cast<FJoltUpdatedMotionState*>(LastMoverDefaultSyncState))
-	{
-		// Update the physics state to the authoritative state since our client sided state is wrong.
-		const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
-		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
-		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
-		
-		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
 
-		if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	if (VirtualCharacter)
+	{
+		if (const FJoltUpdatedMotionState* MoverState = const_cast<FJoltUpdatedMotionState*>(LastMoverDefaultSyncState))
 		{
-			S->RestoreCharacterState(CharacterId, Transform, WorldVelocity);
+			// Update the physics state to the authoritative state since our client sided state is wrong.
+			const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
+			const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
+			const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
+		
+			FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());
+
+			if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+			{
+				VirtualCharacter->SetLinearVelocity(JoltHelpers::ToJoltVector3(WorldVelocity));
+				VirtualCharacter->SetRotation(JoltHelpers::ToJoltRotation(Transform.GetRotation()));
+				VirtualCharacter->SetPosition(JoltHelpers::ToJoltVector3(Transform.GetTranslation()));
+			}
+		
+		}
+	}
+
+	/*if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		FTransform T;
+		FVector A,V,F;
+		S->GetPhysicsState(GetJoltPhysicsBodyComponent(), T, A, V, F);
+		
+		FTransform Transform(T.GetRotation(), T.GetLocation(), UpdatedComponent->GetComponentTransform().GetScale3D());
+		
+		
+		// Apply the desired transform to the scene component
+
+		// If we can, then we can utilize grouped movement updates to reduce the number of calls to SendPhysicsTransform
+		if (IsUsingDeferredGroupMovement())
+		{
+			// Signal to the USceneComponent that we are moving that this should be in a grouped update
+			// and not apply changes on the physics thread immediately
+			FScopedMovementUpdate MovementUpdate(
+				UpdatedComponent,
+				EScopedUpdate::DeferredGroupUpdates,
+				/*bRequireOverlapsEventFlagToQueueOverlaps#1# true);
+
+			
+			UpdatedComponent->SetWorldTransform(Transform, /*bSweep#1#false, nullptr, ETeleportType::None);
+			UpdatedComponent->ComponentVelocity = V;
+		}
+		else
+		{
+			UpdatedComponent->SetWorldTransform(Transform, /*bSweep#1#false, nullptr, ETeleportType::TeleportPhysics);
+			UpdatedComponent->ComponentVelocity = V;
 		}
 		
-	}
-	*/
+		return;
+		
+	}*/
 	
 	Super::RestoreFrame(SyncState, AuxState, NewBaseTimeStep);
 }

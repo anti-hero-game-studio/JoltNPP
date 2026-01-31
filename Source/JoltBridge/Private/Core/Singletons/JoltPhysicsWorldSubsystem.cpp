@@ -20,7 +20,6 @@
 #include "Core/Interfaces/JoltPrimitiveComponentInterface.h"
 #include "Core/Simulation/JoltWorker.h"
 #include "GameFramework/PhysicsVolume.h"
-#include "Jolt/Physics/Constraints/TwoBodyConstraint.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/ConvexElem.h"
 
@@ -768,6 +767,9 @@ void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Targ
 		JoltHelpers::ToJoltVector3(Velocity),
 		JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity))
 	);
+	
+	// update the broadphase so that contacts are corrected 
+	
 }
 
 void UJoltPhysicsWorldSubsystem::GetPhysicsState(const UPrimitiveComponent* Target, FTransform& Transforms, FVector& Velocity, FVector& AngularVelocity,FVector& Force)
@@ -979,7 +981,19 @@ void UJoltPhysicsWorldSubsystem::SetLinearVelocity(const UPrimitiveComponent* Ta
 	if (Id == INDEX_NONE) return;
 	JPH::BodyID JoltBodyId(Id);
 	BodyInterface->SetLinearVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));
+	/*BodyInterface->AddImpulse(JoltBodyId, JoltHelpers::ToJoltVector3(LinearVelocity));*/
 }
+
+void UJoltPhysicsWorldSubsystem::SetAngularVelocity(const UPrimitiveComponent* Target, const FVector AngularVelocity)
+{
+	const int32 Id = FindShapeId(Target);
+	
+	if (Id == INDEX_NONE) return;
+	JPH::BodyID JoltBodyId(Id);
+	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity)));
+	/*BodyInterface->AddAngularImpulse(JoltBodyId, JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity)));*/
+}
+
 
 void UJoltPhysicsWorldSubsystem::RestoreCharacterState(const int32 Id, const FTransform Transform, const FVector LinearVelocity)
 {
@@ -995,14 +1009,6 @@ void UJoltPhysicsWorldSubsystem::RestoreCharacterState(const int32 Id, const FTr
 }
 
 
-void UJoltPhysicsWorldSubsystem::SetAngularVelocity(const UPrimitiveComponent* Target, const FVector AngularVelocity)
-{
-	const int32 Id = FindShapeId(Target);
-	
-	if (Id == INDEX_NONE) return;
-	JPH::BodyID JoltBodyId(Id);
-	BodyInterface->SetAngularVelocity(JoltBodyId, JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity)));
-}
 
 void UJoltPhysicsWorldSubsystem::ApplyVelocity(const UPrimitiveComponent* Target, const FVector LinearVelocity, const FVector AngularVelocity)
 {
@@ -2165,13 +2171,49 @@ void UJoltPhysicsWorldSubsystem::EnsureSnapshotHistoryReady()
 }
 
 
-
-bool UJoltPhysicsWorldSubsystem::GetLastPhysicsState(TArray<uint8>& OutBytes) const
+bool UJoltPhysicsWorldSubsystem::GetDataStreamForCommandFrame(const int32 CommandFrame, FString& DataStream) const
 {
 	if (SnapshotHistory.Num() == 0) return false;
 	
-	OutBytes = SnapshotHistory.Last().Bytes;
+	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
+	
+	const FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+	
+	DataStream = Slot.SnapshotDataAsString;
+	
+	return !Slot.SnapshotDataAsString.IsEmpty();
+}
+
+bool UJoltPhysicsWorldSubsystem::GetLastPhysicsState(const int32& CommandFrame, TArray<uint8>& OutBytes) const
+{
+	if (Snapshot.Bytes.IsEmpty()) return false;
+	
+	/*const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
+	
+	const FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+	*/
+	
+	OutBytes = Snapshot.Bytes;
 	return true;
+}
+
+bool UJoltPhysicsWorldSubsystem::RestorePhysicsStateFromDataStream(const FString& DataStream)
+{
+	check(MainPhysicsSystem);
+
+	JPH::StateRecorderImpl Reader;
+	Reader.WriteBytes(&DataStream, DataStream.GetAllocatedSize());
+
+	// Must match what you saved: Bodies (and any other categories you saved)
+	MainPhysicsSystem->RestoreState(Reader, nullptr);
+
+	// Restore your virtual characters too (must match SaveState)
+	for (const TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
+	{
+		C.Value->RestoreState(Reader);
+	}
+	
+	return !Reader.IsFailed();
 }
 
 int32 UJoltPhysicsWorldSubsystem::FrameToSlotIndex(const int32 CommandFrame) const
@@ -2198,20 +2240,21 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 		return;
 	}
 	
-	EnsureSnapshotHistoryReady();
+	/*EnsureSnapshotHistoryReady();
 
 	check(CommandFrame != INDEX_NONE);
 	check(MainPhysicsSystem != nullptr);
 
 	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
-	FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
+	FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];*/
 
 	// Create a recorder on the stack (no heap alloc needed).
+	Snapshot.Reset();
 	JPH::StateRecorderImpl Recorder;
 
 	// Save only "Bodies" state per your earlier approach; adjust if you need more.
 	// If you later decide to include constraints, broaden EStateRecorderState accordingly.
-	MainPhysicsSystem->SaveState(Recorder, JPH::EStateRecorderState::Bodies, SaveFilter);
+	MainPhysicsSystem->SaveState(Recorder, JPH::EStateRecorderState::All, SaveFilter);
 
 	for (const TTuple<unsigned, JPH::CharacterVirtual*>& C : VirtualCharacterMap)
 	{
@@ -2219,14 +2262,16 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 	}
 
 	const std::string Data = Recorder.GetData();
+	
 
 	// Overwrite (do NOT append). This keeps memory bounded.
-	Slot.Frame = CommandFrame;
-	Slot.Bytes.SetNumUninitialized(static_cast<int32>(Data.size()));
-	if (!Slot.Bytes.IsEmpty())
+	Snapshot.Frame = CommandFrame;
+	Snapshot.Bytes.SetNumUninitialized(static_cast<int32>(Data.size()));
+	if (!Snapshot.Bytes.IsEmpty())
 	{
-		FMemory::Memcpy(Slot.Bytes.GetData(), Data.data(), Data.size());
+		FMemory::Memcpy(Snapshot.Bytes.GetData(), Data.data(), Data.size());
 	}
+	
 }
 
 bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(const int32 CommandFrame)
@@ -2273,10 +2318,15 @@ bool UJoltPhysicsWorldSubsystem::RestoreStateForFrame(const int32 CommandFrame)
 bool UJoltPhysicsWorldSubsystem::RestoreStateFromBytes(TArrayView<const uint8> SnapshotBytes, const JPH::StateRecorderFilter* RestoreFilter)
 {
 	check(MainPhysicsSystem);
-
+	
+	if (ContactListener)
+	{	
+		ContactListener->ClearContactCache();
+	}
+	
 	JPH::StateRecorderImpl Reader;
 	Reader.WriteBytes(SnapshotBytes.GetData(), SnapshotBytes.Num());
-
+	
 	// Must match what you saved: Bodies (and any other categories you saved)
 	MainPhysicsSystem->RestoreState(Reader, RestoreFilter);
 

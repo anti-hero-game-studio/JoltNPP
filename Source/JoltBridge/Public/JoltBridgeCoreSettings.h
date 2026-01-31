@@ -144,7 +144,7 @@ public:
 	 * Most titles won't need this since the authoritative state is already being written into the sync state. 
 	 */
 	UPROPERTY(EditAnywhere, Category="Jolt|Rollback")
-	bool bStoreSnapshotsOnServer = false;
+	bool bStoreSnapshotsOnServer = true;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

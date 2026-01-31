@@ -31,6 +31,9 @@ struct FJoltPhysicsSnapshotSlot
 	// the slot is stale/overwritten/invalid for that frame.
 	UPROPERTY()
 	int32 Frame = INDEX_NONE;
+	
+	UPROPERTY()
+	FString SnapshotDataAsString = TEXT("");
 
 	// Raw snapshot bytes for Jolt::SaveState.
 	UPROPERTY()
@@ -40,6 +43,8 @@ struct FJoltPhysicsSnapshotSlot
 	{
 		Frame = INDEX_NONE;
 		Bytes.Reset();
+		SnapshotDataAsString = "";
+		
 	}
 };
 
@@ -108,6 +113,8 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Registration", DisplayName="Register Dynamic Rigid Body")
 	void RegisterJoltRigidBody(AActor* Target);
+	
+	
 	
 	
 	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects", DisplayName="Set Physics State")
@@ -426,7 +433,13 @@ public:
 	bool HasStateForFrame(int32 CommandFrame) const;
 	int32 GetSnapshotHistoryCapacity() const { return SnapshotHistory.Num(); }
 	
-	bool GetLastPhysicsState(TArray<uint8>& OutBytes) const;
+	bool GetDataStreamForCommandFrame(const int32 CommandFrame, FString& DataStream) const;
+	
+	bool GetLastPhysicsState(const int32& CommandFrame, TArray<uint8>& OutBytes) const;
+	
+	bool RestorePhysicsStateFromDataStream(const FString& DataStream);
+
+	
 
 private:
 	// Convert frame -> slot index
@@ -442,6 +455,9 @@ private:
 	// Circular buffer of snapshots.
 	UPROPERTY(Transient)
 	TArray<FJoltPhysicsSnapshotSlot> SnapshotHistory;
+	
+	UPROPERTY(Transient)
+	FJoltPhysicsSnapshotSlot Snapshot;
 	
 	UPROPERTY(transient)
 	int32 SnapshotHistoryCapacity = 256;

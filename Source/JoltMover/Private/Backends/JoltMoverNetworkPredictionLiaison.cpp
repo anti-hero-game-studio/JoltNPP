@@ -140,7 +140,23 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 
 		if (const FJoltUpdatedMotionState* S = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>())
 		{
-			Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace_Quantized(), S->GetVelocity_WorldSpace_Quantized(), S->GetAngularVelocityDegrees_WorldSpace_Quantized());
+			//Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace_Quantized(), S->GetVelocity_WorldSpace_Quantized(), S->GetAngularVelocityDegrees_WorldSpace_Quantized());
+			
+			const TArray<uint8> Stream = S->GetPhysicsDataStream();
+			if (!Subsystem->RestoreStateFromBytes(Stream, nullptr))
+			{
+				if (!Stream.IsEmpty())
+				{
+					UE_LOG(LogJoltNetworkPrediction, Error, TEXT("Could not restore the physics state from data stream : %hhu"), *Stream.GetData());
+				}
+			}
+			else
+			{
+				if (!Stream.IsEmpty())
+				{
+					UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Restored the physics state from data stream : %hhu Frame : %d"), *Stream.GetData(), NextFrameNum);
+				}
+			}
 		}
 	}
 	
@@ -232,7 +248,13 @@ void UJoltMoverNetworkPredictionLiaisonComponent::PostPhysicsTick(const FJoltNet
 	EndData.AuxState = *SimOutput.Aux.Get();
 	EndData.SyncState = *SimOutput.Sync;
 	
-	MoverComp->PostPhysicsTick(OUT EndData);
+	FJoltMoverTimeStep JoltTimeStep;
+	JoltTimeStep.ServerFrame	= TimeStep.Frame;
+	JoltTimeStep.BaseSimTimeMs = TimeStep.TotalSimulationTime;
+	JoltTimeStep.StepMs		= TimeStep.StepMS;
+	JoltTimeStep.bIsResimulating = TimeStep.IsResimulating;
+	
+	MoverComp->PostPhysicsTick(JoltTimeStep, OUT EndData);
 
 	*SimOutput.Sync = EndData.SyncState;
 	*SimOutput.Aux.Get() = EndData.AuxState;

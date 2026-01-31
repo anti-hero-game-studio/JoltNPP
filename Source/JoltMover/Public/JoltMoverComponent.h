@@ -165,6 +165,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = Mover)
 	JOLTMOVER_API virtual void SetTargetPosition(const FVector Position);
 	
+	UFUNCTION(BlueprintCallable, Category = "JoltBridge Physics|Objects", DisplayName="Set Physics State", meta=(DevelopmentOnly))
+	JOLTMOVER_API void RewindStateBackToPreviousFrame(const int32 FrameDelta);
+
+	
 	// Callbacks
 	UFUNCTION()
 	virtual void OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) { }
@@ -198,7 +202,7 @@ public:
 	JOLTMOVER_API virtual void SimulationTick(const FJoltMoverTimeStep& InTimeStep, const FJoltMoverTickStartData& SimInput, OUT FJoltMoverTickEndData& SimOutput);
 	
 	// Primary movement simulation update. Given an starting state and timestep, produce a new state. Called by backend system.
-	JOLTMOVER_API virtual void PostPhysicsTick(OUT FJoltMoverTickEndData& SimOutput);
+	JOLTMOVER_API virtual void PostPhysicsTick(const FJoltMoverTimeStep& TimeStep, OUT FJoltMoverTickEndData& SimOutput);
 
 	// Specifies which supporting back end class should drive this Mover actor
 	UPROPERTY(EditDefaultsOnly, Category = Mover, meta = (MustImplement = "/Script/JoltMover.MoverBackendLiaisonInterface"))

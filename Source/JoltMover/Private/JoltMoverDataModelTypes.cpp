@@ -177,6 +177,25 @@ bool FJoltUpdatedMotionState::NetSerialize(FArchive& Ar, UPackageMap* Map, bool&
 	SerializePackedVector<10, 16>(Velocity, Ar);
 	SerializePackedVector<10, 16>(AngularVelocityDegrees, Ar);
 	Orientation.SerializeCompressedShort(Ar);
+	
+	uint16 Num = 0;
+	if (Ar.IsSaving())
+	{
+		Num = PhysicsDataStream.Num();
+	}
+	
+	Ar << Num;
+
+	if (Ar.IsLoading())
+	{
+		PhysicsDataStream.SetNum(Num);
+	}
+	
+	for (uint16 i = 0; i < Num; i++)
+	{
+		Ar << PhysicsDataStream[i];
+	}
+	
 
 	// Optional movement base
 	bool bIsUsingMovementBase = (Ar.IsSaving() ? MovementBase.IsValid() : false);
@@ -371,6 +390,11 @@ void FJoltUpdatedMotionState::SetLinearAndAngularVelocity_WorldSpace(const FVect
 {
 	Velocity = UE::JoltNetQuant::QuantizePackedVector<10>(Linear);
 	AngularVelocityDegrees = UE::JoltNetQuant::QuantizePackedVector<10>(Angular);
+}
+
+void FJoltUpdatedMotionState::SetPhysicsDataStream(const TArray<uint8>& Stream)
+{
+	PhysicsDataStream = Stream;
 }
 
 

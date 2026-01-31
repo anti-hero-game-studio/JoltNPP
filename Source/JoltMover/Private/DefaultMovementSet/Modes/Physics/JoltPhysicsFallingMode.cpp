@@ -327,6 +327,10 @@ void UJoltPhysicsFallingMode::ProcessLanded(const FJoltFloorCheckResult& FloorRe
 		TickEndData.MovementEndState.NextModeName = NextMovementMode;
 		OnLanded.Broadcast(NextMovementMode, FloorResult.HitResult);
 	}
+	else
+	{
+		TickEndData.MovementEndState.NextModeName = DefaultModeNames::Falling;
+	}
 }
 
 void UJoltPhysicsFallingMode::CaptureFinalState(const FJoltUpdatedMotionState* StartSyncState, const FVector& FinalLocation, const FRotator& FinalRotation, const FJoltFloorCheckResult& FloorResult, float DeltaSeconds, float DeltaSecondsUsed, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState, FJoltMoverTickEndData& TickEndData, FJoltMovementRecord& Record) const

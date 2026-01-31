@@ -277,8 +277,17 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 	}
 	
 	// Does anyone need to rollback?
-	TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::ReconcileQueryRollback);
 	int32 RollbackFrame = INDEX_NONE;
+	TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::ReconcileQueryRollback);
+	for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
+	{
+		const int32 ReqFrame = Ptr->QueryRollback(&FixedTickState);
+		if (ReqFrame != INDEX_NONE)
+		{
+			RollbackFrame = (RollbackFrame == INDEX_NONE ? ReqFrame : FMath::Min(RollbackFrame, ReqFrame));
+		}
+	}
+	
 	for (TUniquePtr<IJoltFixedRollbackService>& Ptr : Services.FixedRollback.Array)
 	{
 		const int32 ReqFrame = Ptr->QueryRollback(&FixedTickState);
@@ -287,6 +296,8 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 			RollbackFrame = (RollbackFrame == INDEX_NONE ? ReqFrame : FMath::Min(RollbackFrame, ReqFrame));
 		}
 	}
+	
+	
 
 	if (RollbackFrame != INDEX_NONE)
 	{
@@ -321,6 +332,14 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 				
 				UE_JNP_TRACE_PUSH_TICK(Step.TotalSimulationTime, FixedTickState.FixedStepMS, Step.Frame);
 
+				// Roll back the physics state to the authoritative state.
+				for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
+				{
+					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
+					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
+				}
+				
+				// Update the pawn's location from the physics state instead of the sync state.
 				// Everyone must apply corrections and flush as necessary before anyone runs the next sim tick
 				// bFirstStep will indicate that even if they don't have a correction, they need to rollback their historic state
 				for (TUniquePtr<IJoltFixedRollbackService>& Ptr : Services.FixedRollback.Array)
@@ -329,18 +348,14 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
 				}
 
-				if (bFirstStep && Subsystem)
+				/*if (bFirstStep && Subsystem)
 				{
 					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::RestoreStateForFrame);
 					Subsystem->RestoreStateForFrame(ServiceStep.LocalOutputFrame);
-				}
+				}*/
 				
 				
-				for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
-				{
-					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
-					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
-				}
+			
 				// Run Sim ticks
 				for (TUniquePtr<IJoltFixedRollbackService>& Ptr : Services.FixedRollback.Array)
 				{
@@ -357,10 +372,9 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 						const double FixedTimeStep = Step.StepMS * 0.001;
 						Subsystem->StepVirtualCharacters(FixedTimeStep);
 						Subsystem->StepPhysics(FixedTimeStep);
-						Subsystem->SaveStateForFrame(ServiceStep.LocalOutputFrame);
+						Subsystem->SaveStateForFrame(Step.Frame);
 					}
 				}
-				
 				// TODO:@GreggoryAddison::CodeModularity || This will need to be wrapped in a boolean in order to support a Kinematic body using jolt.
 				{
 					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::PostJoltPhysicsTick_Rollback);
@@ -496,7 +510,7 @@ void UJoltNetworkPredictionWorldManager::BeginNewSimulationFrame_Internal(float 
 						const double FixedTimeStep = Step.StepMS * 0.001;
 						Subsystem->StepVirtualCharacters(FixedTimeStep);
 						Subsystem->StepPhysics(FixedTimeStep);
-						Subsystem->SaveStateForFrame(ServiceStep.LocalOutputFrame);
+						Subsystem->SaveStateForFrame(Step.Frame);
 					}
 				
 				}

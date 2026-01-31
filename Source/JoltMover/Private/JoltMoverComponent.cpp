@@ -434,6 +434,16 @@ void UJoltMoverComponent::SetTargetPosition(const FVector Position)
 {
 }
 
+void UJoltMoverComponent::RewindStateBackToPreviousFrame(const int32 FrameDelta)
+{
+	const int32 DesiredFrame = FMath::Max(CachedLastSimTickTimeStep.ServerFrame - FrameDelta, 1);
+
+	if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	{
+		S->RestoreStateForFrame(DesiredFrame);
+	}
+}
+
 void UJoltMoverComponent::ProduceInput(const int32 DeltaTimeMS, FJoltMoverInputCmdContext* Cmd)
 {
 	Cmd->Collection.Empty();
@@ -484,12 +494,19 @@ void UJoltMoverComponent::FinalizeFrame(const FJoltMoverSyncState* SyncState, co
 	// TODO: Revisit this location check -- it seems simplistic now that we have composable state. Consider supporting a version that allows each sync state data struct a chance to react.
 	// The component will often be in the "right place" already on FinalizeFrame, so a comparison check makes sense before setting it.
 	
+	UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
+	if (!S) return;
+	
 	if (const FJoltUpdatedMotionState* MoverState = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>())
 	{
+		FTransform T;
+		FVector V,A,F;
+		S->GetPhysicsState(GetJoltPhysicsBodyComponent(), T, V, A, F);
+		
 		const FRotator& ComponentRot =  UpdatedComponent->GetComponentQuat().Rotator();
-		const FRotator& StateRot = MoverState->GetOrientation_WorldSpace();
+		const FRotator& StateRot = T.GetRotation().Rotator();
 		const FVector& ComponentLoc = UpdatedComponent->GetComponentLocation();	
-		const FVector& StateLoc = MoverState->GetLocation_WorldSpace();
+		const FVector& StateLoc = T.GetLocation();
 
 		if ((ComponentLoc.Equals(StateLoc) == false ||
 			 ComponentRot.Equals(StateRot, ROTATOR_TOLERANCE) == false))
@@ -850,7 +867,7 @@ void UJoltMoverComponent::SimulationTick(const FJoltMoverTimeStep& InTimeStep, c
 	
 }
 
-void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
+void UJoltMoverComponent::PostPhysicsTick(const FJoltMoverTimeStep& TimeStep, FJoltMoverTickEndData& SimOutput)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltMoverComponent::PostPhysicsTick);
 	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
@@ -876,7 +893,7 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		
 		const FTransform NewTransform = U->GetComponentTransform().GetRelativeTransform(UpdatedComponent->GetComponentTransform()).Inverse() * Transform;
 		
-		U->SetWorldTransform(NewTransform);
+		U->SetWorldTransform(Transform);
 		
 		/*const FString MyRole = GetOwnerRole() == ROLE_Authority ? "Server" : "Client"; 
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : Transform = %s"), *MyRole, *T.ToHumanReadableString());
@@ -884,7 +901,15 @@ void UJoltMoverComponent::PostPhysicsTick(FJoltMoverTickEndData& SimOutput)
 		UE_LOG(LogJoltMover, Warning, TEXT("[MSL] NetMode = %s : AngularVelocity = %s"), *MyRole, *A.ToCompactString());*/
 		
 		//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
-		FinalState.SetTransforms_WorldSpace(NewTransform.GetLocation(), NewTransform.GetRotation().Rotator(), V, JoltHelpers::RadiansPerSecToDegreesPerSec(A), nullptr);
+		FinalState.SetTransforms_WorldSpace(Transform.GetLocation(), Transform.GetRotation().Rotator(), V, JoltHelpers::RadiansPerSecToDegreesPerSec(A), nullptr);
+
+		TArray<uint8> DataStream;
+		if (Subsystem->GetLastPhysicsState(TimeStep.ServerFrame, DataStream))
+		{
+			FinalState.SetPhysicsDataStream(DataStream);	
+		}
+		
+		
 	}
 }
 
@@ -1161,9 +1186,12 @@ void UJoltMoverComponent::SetFrameStateFromContext(const FJoltMoverSyncState* Sy
 			MoverState->UpdateCurrentMovementBase();
 		}
 		
+		UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>();
+		
+		if (!Subsystem) return;
 		// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
-		const FVector WorldLocation = MoverState->GetLocation_WorldSpace_Quantized();
-		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace_Quantized();
+		const FVector WorldLocation = MoverState->GetLocation_WorldSpace();
+		const FRotator WorldOrientation = MoverState->GetOrientation_WorldSpace();
 		const FVector WorldVelocity = MoverState->GetVelocity_WorldSpace();
 		
 		FTransform Transform(WorldOrientation, WorldLocation, UpdatedComponent->GetComponentTransform().GetScale3D());

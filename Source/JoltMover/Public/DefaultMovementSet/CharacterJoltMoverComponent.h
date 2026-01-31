@@ -36,8 +36,8 @@ public:
 	UE_API UCharacterJoltMoverComponent();
 	
 	UE_API virtual void BeginPlay() override;
-
-
+	
+	
 	// Returns whether this component is tasked with handling jump input or not
 	UFUNCTION(BlueprintGetter)
 	UE_API bool GetHandleJump() const;
@@ -105,7 +105,7 @@ public:
 	UE_API virtual void SetLinearVelocity(const FVector Velocity) override;
 	UE_API virtual void SetAngularVelocity(const FVector Velocity) override;
 	UE_API virtual void SetTargetOrientation(const FRotator Rotation) override;
-	UE_API virtual void PostPhysicsTick(FJoltMoverTickEndData& SimOutput) override;
+	UE_API virtual void PostPhysicsTick(const FJoltMoverTimeStep& TimeStep, FJoltMoverTickEndData& SimOutput) override;
 	UE_API virtual void RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep) override;
 
 	// Broadcast when this actor changes stances.
