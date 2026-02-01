@@ -567,7 +567,7 @@ void UJoltMoverComponent::FinalizeSmoothingFrame(const FJoltMoverSyncState* Sync
 			// Offset the visual component so it aligns with the smoothed state transform, while leaving the actual root component in place
 			if (const FJoltUpdatedMotionState* MoverState = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>())
 			{
-				FTransform ActorTransform = FTransform(MoverState->GetOrientation_WorldSpace(), MoverState->GetLocation_WorldSpace(), FVector::OneVector);
+				const FTransform ActorTransform = FTransform(MoverState->GetOrientation_WorldSpace(), MoverState->GetLocation_WorldSpace(), FVector::OneVector);
 				PrimaryVisualComponent->SetWorldTransform(BaseVisualComponentTransform * ActorTransform);	// smoothed location with base offset applied
 			}
 		}
@@ -903,13 +903,6 @@ void UJoltMoverComponent::PostPhysicsTick(const FJoltMoverTimeStep& TimeStep, FJ
 		//TODO:@GreggoryAddison::CodeCompletion || The current base a player is standing on will need to be passed in... I think.
 		FinalState.SetTransforms_WorldSpace(Transform.GetLocation(), Transform.GetRotation().Rotator(), V, JoltHelpers::RadiansPerSecToDegreesPerSec(A), nullptr);
 
-		TArray<uint8> DataStream;
-		if (Subsystem->GetLastPhysicsState(TimeStep.ServerFrame, DataStream))
-		{
-			FinalState.SetPhysicsDataStream(DataStream);	
-		}
-		
-		
 	}
 }
 

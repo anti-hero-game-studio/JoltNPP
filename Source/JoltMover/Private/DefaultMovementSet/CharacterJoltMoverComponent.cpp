@@ -202,9 +202,7 @@ void UCharacterJoltMoverComponent::PostPhysicsTick(const FJoltMoverTimeStep& Tim
 			USceneComponent* U = GetJoltPhysicsBodyComponent();
 		
 			if (!U) return;
-		
-		
-		
+			
 			// The state's properties are usually worldspace already, but may need to be adjusted to match the current movement base
 			const FVector WorldLocation = JoltHelpers::ToUnrealPosition(VirtualCharacter->GetCenterOfMassPosition());
 			const FRotator WorldOrientation = JoltHelpers::ToUnrealRotation(VirtualCharacter->GetRotation()).Rotator();
@@ -229,18 +227,6 @@ void UCharacterJoltMoverComponent::PostPhysicsTick(const FJoltMoverTimeStep& Tim
 
 void UCharacterJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncState, const FJoltMoverAuxStateContext* AuxState, const FJoltMoverTimeStep& NewBaseTimeStep)
 {
-	/*if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
-	{
-		if (!S->RestoreStateFromBytes(SyncState->PhysicsSnapshot.View(), nullptr))
-		{
-			UE_LOG(LogJoltMover, Error, TEXT("Could NOT restore the physics world from the snapshot provided."))
-		}
-		else
-		{
-			UE_LOG(LogJoltMover, Error, TEXT("Restored the physics world from the snapshot provided."))
-		}
-	}*/
-
 	if (VirtualCharacter)
 	{
 		if (const FJoltUpdatedMotionState* MoverState = const_cast<FJoltUpdatedMotionState*>(LastMoverDefaultSyncState))
@@ -261,41 +247,6 @@ void UCharacterJoltMoverComponent::RestoreFrame(const FJoltMoverSyncState* SyncS
 		
 		}
 	}
-
-	/*if (UJoltPhysicsWorldSubsystem* S = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
-	{
-		FTransform T;
-		FVector A,V,F;
-		S->GetPhysicsState(GetJoltPhysicsBodyComponent(), T, A, V, F);
-		
-		FTransform Transform(T.GetRotation(), T.GetLocation(), UpdatedComponent->GetComponentTransform().GetScale3D());
-		
-		
-		// Apply the desired transform to the scene component
-
-		// If we can, then we can utilize grouped movement updates to reduce the number of calls to SendPhysicsTransform
-		if (IsUsingDeferredGroupMovement())
-		{
-			// Signal to the USceneComponent that we are moving that this should be in a grouped update
-			// and not apply changes on the physics thread immediately
-			FScopedMovementUpdate MovementUpdate(
-				UpdatedComponent,
-				EScopedUpdate::DeferredGroupUpdates,
-				/*bRequireOverlapsEventFlagToQueueOverlaps#1# true);
-
-			
-			UpdatedComponent->SetWorldTransform(Transform, /*bSweep#1#false, nullptr, ETeleportType::None);
-			UpdatedComponent->ComponentVelocity = V;
-		}
-		else
-		{
-			UpdatedComponent->SetWorldTransform(Transform, /*bSweep#1#false, nullptr, ETeleportType::TeleportPhysics);
-			UpdatedComponent->ComponentVelocity = V;
-		}
-		
-		return;
-		
-	}*/
 	
 	Super::RestoreFrame(SyncState, AuxState, NewBaseTimeStep);
 }

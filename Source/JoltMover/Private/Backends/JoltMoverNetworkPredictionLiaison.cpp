@@ -132,7 +132,7 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 	MoverTimeStep.StepMs = 0;
 	
 	//TODO:@GreggoryAddison::CodeCompletion || This should set the physics state of all mover bodies back to their authoritative state. Static colliders don't need to be reset
-	if (UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
+	if (const UJoltPhysicsWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UJoltPhysicsWorldSubsystem>())
 	{
 		if (!MoverComp) return;
 		const UPrimitiveComponent* P = MoverComp->GetJoltPhysicsBodyComponent();
@@ -140,23 +140,7 @@ void UJoltMoverNetworkPredictionLiaisonComponent::RestorePhysicsFrame(const FJol
 
 		if (const FJoltUpdatedMotionState* S = SyncState->Collection.FindDataByType<FJoltUpdatedMotionState>())
 		{
-			//Subsystem->K2_SetPhysicsState(P, S->GetTransform_WorldSpace_Quantized(), S->GetVelocity_WorldSpace_Quantized(), S->GetAngularVelocityDegrees_WorldSpace_Quantized());
-			
-			const TArray<uint8> Stream = S->GetPhysicsDataStream();
-			if (!Subsystem->RestoreStateFromBytes(Stream, nullptr))
-			{
-				if (!Stream.IsEmpty())
-				{
-					UE_LOG(LogJoltNetworkPrediction, Error, TEXT("Could not restore the physics state from data stream : %hhu"), *Stream.GetData());
-				}
-			}
-			else
-			{
-				if (!Stream.IsEmpty())
-				{
-					UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Restored the physics state from data stream : %hhu Frame : %d"), *Stream.GetData(), NextFrameNum);
-				}
-			}
+			Subsystem->SetPhysicsState(P, S->GetTransform_WorldSpace_Quantized(), S->GetVelocity_WorldSpace_Quantized(), S->GetAngularVelocityDegrees_WorldSpace_Quantized());
 		}
 	}
 	

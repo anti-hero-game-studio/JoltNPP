@@ -332,11 +332,22 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 				
 				UE_JNP_TRACE_PUSH_TICK(Step.TotalSimulationTime, FixedTickState.FixedStepMS, Step.Frame);
 
-				// Roll back the physics state to the authoritative state.
-				for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
 				{
-					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
-					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
+					if (Subsystem)
+					{
+						Subsystem->ClearContactCache();
+						
+						// Roll back the physics state to the authoritative state.
+						for (TUniquePtr<IJoltFixedPhysicsRollbackService>& Ptr : Services.FixedPhysicsRollback.Array)
+						{
+							//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Physics Pre-StepRollBack : Frame = %d"), Frame);
+							Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
+						}
+						
+						Subsystem->InvalidateContactCache();
+					}
+					
+					
 				}
 				
 				// Update the pawn's location from the physics state instead of the sync state.
@@ -347,13 +358,6 @@ void UJoltNetworkPredictionWorldManager::ReconcileSimulationsPostNetworkUpdate_I
 					//UE_LOG(LogJoltNetworkPrediction, Warning, TEXT("Roll Back : Mover Pre-StepRollBack : Frame = %d"), Frame);
 					Ptr->PreStepRollback(Step, ServiceStep, FixedTickState.Offset, bFirstStep);
 				}
-
-				/*if (bFirstStep && Subsystem)
-				{
-					TRACE_CPUPROFILER_EVENT_SCOPE(JoltNetworkPrediction::RestoreStateForFrame);
-					Subsystem->RestoreStateForFrame(ServiceStep.LocalOutputFrame);
-				}*/
-				
 				
 			
 				// Run Sim ticks

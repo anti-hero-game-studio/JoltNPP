@@ -220,9 +220,6 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = Mover)
 	FQuat MovementBaseQuat;
-	
-	UPROPERTY(BlueprintReadOnly, Category = Mover)
-	TArray<uint8> PhysicsDataStream;
 
 public:
 
@@ -258,7 +255,6 @@ public:
 	UE_API void SetLinearVelocity_WorldSpace(const FVector& LinearVelocity);
 	UE_API void SetAngularVelocity_WorldSpace(const FVector& LinearVelocity);
 	UE_API void SetLinearAndAngularVelocity_WorldSpace(const FVector& Linear, const FVector& Angular);
-	UE_API void SetPhysicsDataStream(const TArray<uint8>& Stream);
 
 	// Returns whether the base setting succeeded
 	UE_API bool SetMovementBase(UPrimitiveComponent* Base, FName BaseBone=NAME_None);
@@ -273,8 +269,6 @@ public:
 	FName GetMovementBaseBoneName() const { return MovementBaseBoneName; }
 	FVector GetCapturedMovementBasePos() const { return MovementBasePos; }
 	FQuat GetCapturedMovementBaseQuat() const { return MovementBaseQuat; }
-	
-	UE_API TArray<uint8> GetPhysicsDataStream() const { return PhysicsDataStream; }
 
 	UE_API FVector GetLocation_WorldSpace() const;
 	UE_API FVector GetLocation_BaseSpace() const;	// If there is no movement base set, these will be the same as world space

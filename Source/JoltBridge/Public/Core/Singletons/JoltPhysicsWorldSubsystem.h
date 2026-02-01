@@ -207,6 +207,8 @@ public:
 	TArray<int32> SweepTraceMulti(const FCollisionShape& Shape, const FVector& Start, const FVector& End, const FQuat& Rotation, const TEnumAsByte<ECollisionChannel>& Channel, const TArray<AActor*>& ActorsToIgnore, TArray<FHitResult>& OutHits);
 	FVector GetVelocity(const JPH::BodyID& ID) const;
 	JPH::PhysicsSystem* GetPhysicsSystem() const {return MainPhysicsSystem;}
+	void ClearContactCache() const;
+	void InvalidateContactCache() const;
 
 private:
 	

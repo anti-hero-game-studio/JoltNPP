@@ -20,6 +20,7 @@
 #include "Core/Interfaces/JoltPrimitiveComponentInterface.h"
 #include "Core/Simulation/JoltWorker.h"
 #include "GameFramework/PhysicsVolume.h"
+#include "Jolt/Physics/Body/BodyActivationListener.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/ConvexElem.h"
 
@@ -759,6 +760,8 @@ void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Targ
 	
 	const JPH::BodyID ID(ShapeId);
 	
+	BodyInterface->InvalidateContactCache(ID);
+	
 	BodyInterface->SetPositionRotationAndVelocity
 	(
 		ID, 
@@ -768,7 +771,7 @@ void UJoltPhysicsWorldSubsystem::SetPhysicsState(const UPrimitiveComponent* Targ
 		JoltHelpers::ToJoltVector3(JoltHelpers::DegreesPerSecToRadiansPerSec(AngularVelocity))
 	);
 	
-	// update the broadphase so that contacts are corrected 
+	
 	
 }
 
@@ -1525,6 +1528,22 @@ FVector UJoltPhysicsWorldSubsystem::GetVelocity(const JPH::BodyID& ID) const
 	return JoltHelpers::ToUnrealVector3(BodyInterface->GetLinearVelocity(ID));
 }
 
+void UJoltPhysicsWorldSubsystem::ClearContactCache() const
+{
+	if (ContactListener)
+	{
+		ContactListener->ClearContactCache();
+	}
+}
+
+void UJoltPhysicsWorldSubsystem::InvalidateContactCache() const
+{
+	for (const TTuple<unsigned, JPH::Body*>& ID : BodyIDBodyMap)
+	{
+		BodyInterface->InvalidateContactCache(JPH::BodyID(ID.Key));
+	}
+}
+
 void UJoltPhysicsWorldSubsystem::ConstructHitResult(const FRaycastCollector_FirstHit& Result, FHitResult& OutHit) const
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltPhysicsWorldSubsystem::ConstructHitResult);
@@ -2240,13 +2259,13 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 		return;
 	}
 	
-	/*EnsureSnapshotHistoryReady();
+	EnsureSnapshotHistoryReady();
 
 	check(CommandFrame != INDEX_NONE);
 	check(MainPhysicsSystem != nullptr);
 
 	const int32 SlotIdx = FrameToSlotIndex(CommandFrame);
-	FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];*/
+	FJoltPhysicsSnapshotSlot& Slot = SnapshotHistory[SlotIdx];
 
 	// Create a recorder on the stack (no heap alloc needed).
 	Snapshot.Reset();
@@ -2265,11 +2284,11 @@ void UJoltPhysicsWorldSubsystem::SaveStateForFrame(const int32 CommandFrame, con
 	
 
 	// Overwrite (do NOT append). This keeps memory bounded.
-	Snapshot.Frame = CommandFrame;
-	Snapshot.Bytes.SetNumUninitialized(static_cast<int32>(Data.size()));
-	if (!Snapshot.Bytes.IsEmpty())
+	Slot.Frame = CommandFrame;
+	Slot.Bytes.SetNumUninitialized(static_cast<int32>(Data.size()));
+	if (!Slot.Bytes.IsEmpty())
 	{
-		FMemory::Memcpy(Snapshot.Bytes.GetData(), Data.data(), Data.size());
+		FMemory::Memcpy(Slot.Bytes.GetData(), Data.data(), Data.size());
 	}
 	
 }

@@ -25,7 +25,7 @@ UJoltPhysicsWalkingMode::UJoltPhysicsWalkingMode(const FObjectInitializer& Objec
 
 void UJoltPhysicsWalkingMode::GenerateMove_Implementation(const FJoltMoverTickStartData& StartState, const FJoltMoverTimeStep& TimeStep, FJoltProposedMove& OutProposedMove) const
 {
-	const UJoltMoverComponent* MoverComp = GetMoverComponent();
+	UJoltMoverComponent* MoverComp = GetMoverComponent();
 	const FJoltCharacterDefaultInputs* CharacterInputs = StartState.InputCmd.Collection.FindDataByType<FJoltCharacterDefaultInputs>();
 	const FJoltUpdatedMotionState* StartingSyncState = StartState.SyncState.Collection.FindDataByType<FJoltUpdatedMotionState>();
 	check(StartingSyncState);
@@ -43,7 +43,37 @@ void UJoltPhysicsWalkingMode::GenerateMove_Implementation(const FJoltMoverTickSt
 	FVector UpDirection = MoverComp->GetUpDirection();
 
 	// Try to use the floor as the basis for the intended move direction (i.e. try to walk along slopes, rather than into them)
-	if (SimBlackboard && SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, LastFloorResult) && LastFloorResult.IsWalkableFloor())
+	/*if (!TimeStep.bIsResimulating)
+	{
+		if (SimBlackboard && SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, LastFloorResult) && LastFloorResult.IsWalkableFloor())
+		{
+			MovementNormal = LastFloorResult.HitResult.ImpactNormal;
+		}
+		else
+		{
+			MovementNormal = UpDirection;
+		}
+	}
+	else
+	{
+		FJoltMovingComponentSet Sets(MoverComp);
+		
+		UJoltFloorQueryUtils::FindFloor(Sets, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, StartingSyncState->GetLocation_WorldSpace_Quantized() , LastFloorResult);
+		
+		if (LastFloorResult.IsWalkableFloor())
+		{
+			MovementNormal = LastFloorResult.HitResult.ImpactNormal;
+		}
+		else
+		{
+			MovementNormal = UpDirection;
+		}
+	}*/
+	
+	const FJoltMovingComponentSet Sets(MoverComp);
+	UJoltFloorQueryUtils::FindFloor(Sets, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, StartingSyncState->GetLocation_WorldSpace_Quantized() , LastFloorResult);
+		
+	if (LastFloorResult.IsWalkableFloor())
 	{
 		MovementNormal = LastFloorResult.HitResult.ImpactNormal;
 	}
@@ -147,10 +177,12 @@ void UJoltPhysicsWalkingMode::SimulationTick_Implementation(const FJoltSimulatio
 	FVector UpDirection = MoverComp->GetUpDirection();
 	
 	// If we don't have cached floor information, we need to search for it again
-	if (!SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, CurrentFloor))
+	/*if (!SimBlackboard->TryGet(CommonBlackboard::LastFloorResult, CurrentFloor))
 	{
-		UJoltFloorQueryUtils::FindFloor(Params.MovingComps, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, StartLocation, CurrentFloor);
-	}
+		
+	}*/
+	
+	UJoltFloorQueryUtils::FindFloor(Params.MovingComps, CommonLegacySettings->FloorSweepDistance, CommonLegacySettings->MaxWalkSlopeCosine, CommonLegacySettings->bUseFlatBaseForFloorChecks, StartLocation, CurrentFloor);
 
 	OutputSyncState.MoveDirectionIntent = (ProposedMove.bHasDirIntent ? ProposedMove.DirectionIntent : FVector::ZeroVector);
 
@@ -363,16 +395,16 @@ void UJoltPhysicsWalkingMode::OnUnregistered()
 
 void UJoltPhysicsWalkingMode::CaptureFinalState(const FVector FinalLocation, const FRotator FinalRotation, bool bDidAttemptMovement, const FJoltFloorCheckResult& FloorResult, const FJoltMovementRecord& Record, const FVector& AngularVelocityDegrees, FJoltUpdatedMotionState& OutputSyncState) const
 {
-	FJoltRelativeBaseInfo PriorBaseInfo;
+	//FJoltRelativeBaseInfo PriorBaseInfo;
 
 	const UJoltMoverComponent* MoverComp = GetMoverComponent();
-	UJoltMoverBlackboard* SimBlackboard = MoverComp->GetSimBlackboard_Mutable();
+	/*UJoltMoverBlackboard* SimBlackboard = MoverComp->GetSimBlackboard_Mutable();
 
 	const bool bHasPriorBaseInfo = SimBlackboard->TryGet(CommonBlackboard::LastFoundDynamicMovementBase, PriorBaseInfo);
 
-	FJoltRelativeBaseInfo CurrentBaseInfo = UpdateFloorAndBaseInfo(FloorResult);
+	FJoltRelativeBaseInfo CurrentBaseInfo = UpdateFloorAndBaseInfo(FloorResult);*/
 
-	// If we're on a dynamic base and we're not trying to move, keep using the same relative actor location. This prevents slow relative 
+	/*// If we're on a dynamic base and we're not trying to move, keep using the same relative actor location. This prevents slow relative 
 	//  drifting that can occur from repeated floor sampling as the base moves through the world.
 	if (CurrentBaseInfo.HasRelativeInfo() 
 		&& bHasPriorBaseInfo && !bDidAttemptMovement 
@@ -395,12 +427,17 @@ void UJoltPhysicsWalkingMode::CaptureFinalState(const FVector FinalLocation, con
 	{
 		SimBlackboard->Invalidate(CommonBlackboard::LastFoundDynamicMovementBase);
 
-		OutputSyncState.SetTransforms_WorldSpace( FinalLocation,
-                                                  FinalRotation,
-                                                  Record.GetRelevantVelocity(),
-                                                  AngularVelocityDegrees,
-                                                  nullptr);  // no movement base
-	}
+		
+	}*/
+	
+	OutputSyncState.SetTransforms_WorldSpace
+	(
+		FinalLocation,
+		FinalRotation,
+		Record.GetRelevantVelocity(),
+		AngularVelocityDegrees,
+		nullptr
+	);  // no movement base
 }
 
 
